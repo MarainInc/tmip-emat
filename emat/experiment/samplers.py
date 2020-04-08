@@ -77,7 +77,7 @@ class CorrelatedSampler(AbstractSampler):
 
         '''
         return pandas.DataFrame({
-            param.name:  numpy.array(self.sample_std_uniform(size)).reshape((size))
+            param.name:  numpy.array(self.sample_std_uniform(size)).reshape(size)
             for param in parameters
         })
 
