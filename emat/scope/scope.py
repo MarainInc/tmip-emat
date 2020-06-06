@@ -86,6 +86,7 @@ class Scope:
 
         self.name = str(scope['scope']['name'])
         self.desc = scope['scope'].get('desc', '')
+        self.display_name = scope['scope'].get('display_name', '')
         self.xl_di = scope['inputs']
         self.m_di = scope['outputs']
 
@@ -177,7 +178,8 @@ class Scope:
                       self.scope_file,
                       [xl for xl in self.xl_di],
                       [m.name for m in self._m_list],
-                       content=self)
+                       content=self,
+                       display_name=self.display_name)
         
     def delete_scope(self, db: Database):
         '''Deletes scope from database.

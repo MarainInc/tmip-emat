@@ -52,7 +52,7 @@ class Database(abc.ABC):
         """   
     
     @abc.abstractmethod
-    def write_scope(self, scope_name, sheet, scp_xl, scp_m, content):
+    def write_scope(self, scope_name, sheet, scp_xl, scp_m, content, display_name=None):
         """Save the emat scope information to the database.
           
         Args:
@@ -63,6 +63,7 @@ class Database(abc.ABC):
                 strategy variables
             m_list (List[str]): scope performance measures
             content (Scope): scope object
+            display_name (str, optional): Display name to be used with this scope.
         Raises:
             KeyError: If scope name already exists, the scp_vars are not
                 available, or the performance measures are not initialized
