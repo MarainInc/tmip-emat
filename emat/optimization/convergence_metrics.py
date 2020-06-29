@@ -1,11 +1,18 @@
 
-from ema_workbench.em_framework.optimization import AbstractConvergenceMetric, Hypervolume, to_dataframe
+from ..workbench.em_framework.optimization import AbstractConvergenceMetric, Hypervolume, to_dataframe
 import pandas
-import platypus
+try:
+	import platypus
+except ImportError:
+	platypus = None
 from ..viz.line import line_graph
 from ..viz.table import table_figure
-from ipywidgets import widgets
-from IPython.display import display_html
+try:
+	from ipywidgets import widgets
+	from ipywidgets import HBox
+except ImportError:
+	widgets = None
+	class HBox: pass
 
 FIG_HEIGHT = 240
 FIG_WIDTH = 340
@@ -90,12 +97,6 @@ class HyperVolume(AbstractConvergenceMetricGraph):
 	def __init__(self, minimum, maximum):
 		super().__init__("hypervolume", title = "Hypervolume")
 		self.hypervolume_func = Hypervolume(minimum=minimum, maximum=maximum)
-		# self.figure = line_graph(
-		# 	X=None, Y=None, widget=True, title = "Hypervolume", xtitle='Generation', interpolate='linear',
-		# )
-		# self.figure.layout.height = FIG_HEIGHT
-		# self.figure.layout.width = FIG_WIDTH
-		# self.figure.layout.margin = FIG_MARGINS
 
 	def __call__(self, optimizer):
 		self.results.append(self.hypervolume_func.calculate(optimizer.algorithm.archive))
@@ -105,7 +106,6 @@ class HyperVolume(AbstractConvergenceMetricGraph):
 			while start < len(self.results) and self.results[start] == 0:
 				start += 1
 			figure_data = self.results[start:]
-			# self.figure.data[0].y = figure_data
 			try:
 				y_range = min(figure_data), max(figure_data)
 			except:
@@ -137,25 +137,14 @@ class SolutionCount(AbstractConvergenceMetricGraph):
 
 	def __init__(self):
 		super().__init__("solution_count", title="Number of Solutions")
-		# self.figure = line_graph(
-		# 	X=None, Y=None, widget=True, title="Number of Solutions",
-		# 	xtitle='Number of Function Evaluations', interpolate='linear',
-		# )
-		# self.figure.layout.height = FIG_HEIGHT
-		# self.figure.layout.width = FIG_WIDTH
-		# self.figure.layout.margin = FIG_MARGINS
-		# self.nfes = []
 
 	def __call__(self, optimizer):
 		n_solutions = 0
+		if platypus is None: raise ModuleNotFoundError("platypus")
 		for _ in platypus.unique(platypus.nondominated(optimizer.result)):
 			n_solutions += 1
 		self.results.append(n_solutions)
 		super().__call__(optimizer)
-		# self.nfes.append(optimizer.algorithm.nfe)
-		# with self.figure.batch_update():
-		# 	self.figure.data[0].y = self.results
-		# 	self.figure.data[0].x = self.nfes
 
 class SolutionViewer(AbstractConvergenceMetric):
 	"""
@@ -236,7 +225,7 @@ class SolutionViewer(AbstractConvergenceMetric):
 		)
 
 
-class ConvergenceMetrics(widgets.HBox):
+class ConvergenceMetrics(HBox):
 	"""
 	ConvergenceMetrics emulates a list to contain AbstractConvergenceMetrics.
 
@@ -245,10 +234,11 @@ class ConvergenceMetrics(widgets.HBox):
 
 	def __init__(self, *members):
 		self._members = list(members)
-		widgets.HBox.__init__(
-			self, [member.figure for member in members],
-			layout=dict(flex_flow='row wrap'),
-		)
+		if widgets is not None:
+			HBox.__init__(
+				self, [member.figure for member in members],
+				layout=dict(flex_flow='row wrap'),
+			)
 
 	def __getitem__(self, item):
 		return self._members[item]

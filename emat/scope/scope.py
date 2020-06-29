@@ -5,8 +5,8 @@ import numpy
 import yaml
 import warnings
 import itertools
-from ema_workbench import ScalarOutcome
-from ema_workbench.em_framework.parameters import Category
+from ..workbench import ScalarOutcome
+from ..workbench.em_framework.parameters import Category
 from typing import Mapping
 from scipy.stats._distn_infrastructure import rv_frozen
 
@@ -15,6 +15,9 @@ from .parameter import Parameter, standardize_parameter_type, make_parameter
 from .measure import Measure
 from ..util.docstrings import copydoc
 from ..util import rv_frozen_as_dict
+
+from ..util.loggers import get_module_logger
+_logger = get_module_logger(__name__)
 
 from ..exceptions import *
 
@@ -118,11 +121,11 @@ class Scope:
                 if x_attr_type == 'missing':
                     raise ScopeFormatError(f'inputs:{x_name} is missing ptype, must be uncertainty, lever, or constant')
                 if not isinstance(x_attr_type, str):
-                    raise ScopeFormatError(f'inputs:{x_name} has invalid ptype {x_attr_type}')
+                    raise ScopeFormatError(f'inputs:{x_name} has invalid ptype {x_attr_type}, it must be uncertainty, lever, or constant')
                 try:
                     x_attr_type = standardize_parameter_type(x_attr_type)
                 except ValueError:
-                    raise ScopeFormatError(f'inputs:{x_name} has invalid ptype {x_attr.get("ptype")}')
+                    raise ScopeFormatError(f'inputs:{x_name} has invalid ptype {x_attr.get("ptype")}, it must be uncertainty, lever, or constant')
 
                 try:
                     p = make_parameter(x_name, **x_attr)
@@ -156,7 +159,24 @@ class Scope:
             if getattr(self,k) != getattr(other,k):
                 return False
         return True
-    
+
+    def _assert_equal(self, other):
+        if type(other) != type(self):
+            raise AssertionError(f"not same type: {type(other)} != {type(self)}")
+        for k in ('_x_list', '_l_list', '_c_list', ):
+            if len(getattr(self,k)) != len(getattr(other,k)):
+                raise AssertionError(f"mismatch length {k}: {len(getattr(self,k))} != {len(getattr(other,k))}")
+            for i,j in zip(getattr(self,k), getattr(other,k)):
+                if isinstance(i, rv_frozen):
+                    if rv_frozen_as_dict(i) != rv_frozen_as_dict(j):
+                        raise AssertionError(f"mismatch rv_frozen: {rv_frozen_as_dict(i)} != {rv_frozen_as_dict(j)}")
+                else:
+                    if i != j:
+                        raise AssertionError(f"mismatch item: {i} != {j}")
+        for k in ('_m_list', 'name', 'desc'):
+            if getattr(self,k) != getattr(other,k):
+                raise AssertionError(f"mismatch {k}: {getattr(self,k)} != {getattr(other,k)}")
+
 
     def store_scope(self, db: Database):
         ''' writes variables and scope definition to database 
@@ -249,9 +269,7 @@ class Scope:
         try:
             return type(self)(self.scope_file, scope_def=y)
         except:
-            print("~"*20)
-            print(y)
-            print("~"*20)
+            _logger.error(f"scope dump\n{str(y)}")
             raise
 
     def dump(
@@ -321,6 +339,7 @@ class Scope:
         measure_keys = {
             # 'shortname': lambda x: x or None,  # processed separately
             'kind':  lambda x: {-1:'minimize', 0:'info', 1:'maximize'}.get(x,x),
+            'desc': lambda x: x,
             'transform': lambda x: x,
             'metamodeltype': lambda x: 'linear' if x is None else x,
         }
@@ -463,6 +482,10 @@ class Scope:
         """Get a list of model parameters (uncertainties+levers+constants)."""
         return self.get_constants()+self.get_uncertainties()+self.get_levers()
 
+    def get_parameter_defaults(self):
+        """Get a dict of default values of model parameters (uncertainties+levers+constants)."""
+        return {p.name:p.default for p in self.get_parameters()}
+
     def get_measures(self):
         """Get a list of performance measures."""
         return [i for i in self._m_list]
@@ -535,6 +558,24 @@ class Scope:
         if name not in correct_dtypes:
             raise KeyError(name)
         return correct_dtypes[name]
+
+    def get_ptype(self, name):
+        """
+        Get the ptype for a parameter or measure.
+
+        Args:
+            name (str):
+                The name of the parameter or measure
+
+        Returns:
+            str:
+                {'X', 'L', 'C', 'M'}
+        """
+        if name in self.get_measure_names(): return 'M'
+        if name in self.get_uncertainty_names(): return 'X'
+        if name in self.get_lever_names(): return 'L'
+        if name in self.get_constant_names(): return 'C'
+        raise KeyError(name)
 
     def get_cat_values(self, name):
         """
@@ -648,6 +689,26 @@ class Scope:
             except:
                 return name
 
+    def tagged_shortname(self, name):
+        """
+        Get a label, for any named parameter or measure.
+
+        The label is the shortname, if available, and a circled letter
+        symbol indicating the ptype of the parameter or measure.
+
+        Args:
+            name: str
+        Returns:
+            str
+        """
+        tags = dict(
+            L="Ⓛ ",
+            X="Ⓧ ",
+            M="Ⓜ ",
+            C="Ⓒ ",
+        )
+        return tags.get(self.get_ptype(name),"")+self.shortname(name)
+
     def get_description(self, name):
         """
         Get a description, if available, for any named parameter or measure.
@@ -677,9 +738,9 @@ class Scope:
                 with these values.
 
         Returns:
-            ema_workbench.Policy
+            emat.workbench.Policy
         """
-        from ema_workbench import Policy
+        from ..workbench import Policy
         values = {l.name: l.default for l in self.get_levers()}
         values.update(kwargs)
         return Policy('default', **values)
@@ -694,9 +755,9 @@ class Scope:
                 with these values.
 
         Returns:
-            ema_workbench.Scenario
+            emat.workbench.Scenario
         """
-        from ema_workbench import Scenario
+        from ..workbench import Scenario
         values = {u.name: u.default for u in self.get_uncertainties()}
         values.update(kwargs)
         return Scenario('default', **values)

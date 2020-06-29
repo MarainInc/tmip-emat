@@ -3,7 +3,7 @@ import numbers
 from typing import Collection, Any, Mapping
 import numpy
 
-from ema_workbench.em_framework import parameters as workbench_param
+from ..workbench.em_framework import parameters as workbench_param
 from scipy import stats
 from scipy.stats._distn_infrastructure import rv_frozen
 
@@ -187,7 +187,14 @@ def make_parameter(
             raise ValueError(f'cannot infer dtype for {name}, give it explicitly')
 
     if dtype not in ('cat', 'int', 'real', 'bool'):
-        raise ValueError(f"invalid dtype {dtype}")
+        message = f"invalid dtype {dtype} for parameter {name}, must be 'cat', 'int', 'real', or 'bool'"
+        if 'unc' in dtype:
+            message += "\n(to set this parameter as an uncertainty, set `ptype` to 'uncertainty', not `dtype`)"
+        elif 'lev' in dtype:
+            message += "\n(to set this parameter as a lever, set `ptype` to 'lever', not `dtype`)"
+        elif 'con' in dtype:
+            message += "\n(to set this parameter as a constant, set `ptype` to 'constant', not `dtype`)"
+        raise ValueError(message)
 
     # Data checks
 

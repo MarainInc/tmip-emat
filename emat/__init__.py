@@ -1,19 +1,10 @@
 #
 
-__version__ = '0.2.10'
+__version__ = '0.3.0'
 
 
 import logging
 
-def require_version(required_version, pkg):
-	if required_version.split('.') > pkg.__version__.split('.'):
-		raise ValueError(f"this {pkg.__name__} is version {pkg.__version__}")
-	if 'CS' in required_version and 'CS' not in pkg.__version__:
-		raise ValueError(f"this {pkg.__name__} is version {pkg.__version__}, a 'CS' patched version is required\n"
-						 "try using: conda update ema_workbench -c tmip")
-
-import ema_workbench
-require_version('2.1.507', ema_workbench)
 
 _currently_captured = (logging._warnings_showwarning is not None)
 logging.captureWarnings(True)
@@ -21,6 +12,7 @@ logging.captureWarnings(True)
 try:
 
 	from ._pkg_constants import *
+	from . import workbench
 	from .configuration import config
 	from .scope.scope import Scope
 	from .scope.scope import Measure
@@ -32,13 +24,14 @@ try:
 	from .optimization.optimization_result import OptimizationResult
 	from .exceptions import *
 	from .versions import versions
+	from .experiment.experimental_design import ExperimentalDesign
 
 	try:
 		from .model.core_excel import ExcelCoreModel
 	except (ModuleNotFoundError, ImportError):
 		ExcelCoreModel = None
 
-	from ema_workbench import Constraint
+	from .workbench import Constraint
 
 finally:
 	logging.captureWarnings(_currently_captured)

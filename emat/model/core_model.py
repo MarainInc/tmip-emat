@@ -6,8 +6,8 @@ import yaml
 import pandas as pd
 import numpy as np
 from typing import Union, Mapping
-from ema_workbench.em_framework.model import AbstractModel as AbstractWorkbenchModel
-from ema_workbench.em_framework.evaluators import BaseEvaluator
+from ..workbench.em_framework.model import AbstractModel as AbstractWorkbenchModel
+from ..workbench.em_framework.evaluators import BaseEvaluator
 
 from typing import Collection
 from typing import Iterable
@@ -48,7 +48,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             untrusted sources.
         db: An optional Database to store experiments and results.
         name: A name for this model, given as an alphanumeric string.
-            The name is required by ema_workbench operations.
+            The name is required by workbench operations.
             If not given, "EMAT" is used.
         metamodel_id: An identifier for this model, if it is a meta-model.
             Defaults to 0 (i.e., not a meta-model).
@@ -93,88 +93,165 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
     @abc.abstractmethod
     def setup(self, params):
         """
-        Configure the core model with the experiment variable values
-        
-        
+        Configure the core model with the experiment variable values.
+
+        This method is the place where the core model set up takes place,
+        including creating or modifying files as necessary to prepare
+        for a core model run.  When running experiments, this method
+        is called once for each core model experiment, where each experiment
+        is defined by a set of particular values for both the exogenous
+        uncertainties and the policy levers.  These values are passed to
+        the experiment only here, and not in the `run` method itself.
+        This facilitates debugging, as the `setup` method can potentially
+        be used without the `run` method, allowing the user to manually
+        inspect the prepared files and ensure they are correct before
+        actually running a potentially expensive model.
+
+        Each input exogenous uncertainty or policy lever can potentially
+        be used to manipulate multiple different aspects of the underlying
+        core model.  For example, a policy lever that includes a number of
+        discrete future network "build" options might trigger the replacement
+        of multiple related network definition files.  Or, a single uncertainty
+        relating to the cost of fuel might scale both a parameter linked to
+        the modeled per-mile cost of operating an automobile, as well as the
+        modeled total cost of fuel used by transit services.
+
+        At the end of the `setup` method, a core model experiment should be
+        ready to run using the `run` method.
+
         Args:
-            params (dict): experiment variables including both exogenous 
+            params (dict):
+                experiment variables including both exogenous
                 uncertainty and policy levers
                 
         Raises:
-            KeyError: if experiment variable defined is not supported
+            KeyError:
+                if a defined experiment variable is not supported
                 by the core model        
         """     
  
     @abc.abstractmethod
-    def get_experiment_archive_path(self, experiment_id: int) -> str:
+    def get_experiment_archive_path(self, experiment_id=None, makedirs=False, parameters=None):
         """
-        Returns path to store model run outputs
-        
-        Can be useful for long model runs if additional measures will be
-        defined at a later time (e.g. link volumes). 
-        
+        Returns a file system location to store model run outputs.
+
+        For core models with long model run times, it is recommended
+        to store the complete model run results in an archive.  This
+        will facilitate adding additional performance measures to the
+        scope at a later time.
+
         Both the scope name and experiment id can be used to create the 
         folder path. 
         
         Args:
             experiment_id (int):
-                experiment id integer (row id of experiment in database)
+                The experiment id, which is also the row id of the
+                experiment in the database. If this is omitted, an
+                experiment id is read or created using the parameters.
+            makedirs (bool, default False):
+                If this archive directory does not yet exist, create it.
+            parameters (dict, optional):
+                The parameters for this experiment, used to create or
+                lookup an experiment id. The parameters are ignored
+                if `experiment_id` is given.
                 
         Returns:
-            str: model result path (no trailing backslashes)
+            str: Experiment archive path (no trailing backslashes).
         """     
     
     @abc.abstractmethod
     def run(self):
         """
-        Initiates the core model run
-        
-        Model should be 'setup' first
-                
+        Run the core model.
+
+        This method is the place where the core model run takes place.
+        Note that this method takes no arguments; all the input
+        exogenous uncertainties and policy levers are delivered to the
+        core model in the `setup` method, which will be executed prior
+        to calling this method. This facilitates debugging, as the `setup`
+        method can potentially be used without the `run` method, allowing
+        the user to manually inspect the prepared files and ensure they
+        are correct before actually running a potentially expensive model.
+        When running experiments, this method is called once for each core
+        model experiment, after the `setup` method completes.
+
+        If the core model requires some post-processing by `post_process`
+        method defined in this API, then when this function terminates
+        the model directory should be in a state that is ready to run the
+        `post_process` command next.
+
         Raises:
             UserWarning: If model is not properly setup
         """     
     
-    @abc.abstractmethod
     def post_process(self, params, measure_names, output_path=None):
         """
-        Runs post processors associated with measures.
+        Runs post processors associated with particular performance measures.
 
-        The model should have previously been prepared using
-        the `setup` method.
+        This method is the place to conduct automatic post-processing
+        of core model run results, in particular any post-processing that
+        is expensive or that will write new output files into the core model's
+        output directory.  The core model run should already have
+        been completed using `setup` and `run`.  If the relevant performance
+        measures do not require any post-processing to create (i.e. they
+        can all be read directly from output files created during the core
+        model run itself) then this method does not need to be overloaded
+        for a particular core model implementation.
 
         Args:
             params (dict):
-                Dictionary of experiment variables - indices
-                are variable names, values are the experiment settings
+                Dictionary of experiment variables, with keys as variable names
+                and values as the experiment settings. Most post-processing
+                scripts will not need to know the particular values of the
+                inputs (exogenous uncertainties and policy levers), but this
+                method receives the experiment input parameters as an argument
+                in case one or more of these parameter values needs to be known
+                in order to complete the post-processing.
             measure_names (List[str]):
-                List of measures to be processed
-            output_path (str):
-                Path to model outputs - if set to none
-                will use local values
+                List of measures to be processed.  Normally for the first pass
+                of core model run experiments, post-processing will be completed
+                for all performance measures.  However, it is possible to use
+                this argument to give only a subset of performance measures to
+                post-process, which may be desirable if the post-processing
+                of some performance measures is expensive.  Additionally, this
+                method may also be called on archived model results, allowing
+                it to run to generate only a subset of (probably new) performance
+                measures based on these archived runs.
+            output_path (str, optional):
+                Path to model outputs.  If this is not given (typical for the
+                initial run of core model experiments) then the local/default
+                model directory is used.  This argument is provided primarily
+                to facilitate post-processing archived model runs to make new
+                performance measures (i.e. measures that were not in-scope when
+                the core model was actually run).
 
         Raises:
             KeyError:
-                If post process is not available for specified
-                measure
+                If post process is not available for specified measure
         """
     
     @abc.abstractmethod
     def load_measures(
             self,
-            measure_names: Collection[str],
+            measure_names: Collection[str]=None,
             *,
             rel_output_path=None,
             abs_output_path=None,
-	) -> dict:
+    ) -> dict:
         """
         Import selected measures from the core model.
         
+        This method is the place to put code that can actually reach into
+        files in the core model's run results and extract performance
+        measures. It is expected that it should not do any post-processing
+        of results (i.e. it should read from but not write to the model
+        outputs directory).
+
         Imports measures from active scenario
         
         Args:
             measure_names (Collection[str]):
-                Collection of measures to be processed
+                Collection of measures to be loaded.
             rel_output_path, abs_output_path (str, optional):
                 Path to model output locations, either relative
                 to the `model_path` directory (when a subclass
@@ -195,7 +272,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
     @abc.abstractmethod
     def archive(self, params, model_results_path, experiment_id:int=0):
         """
-        Copies model outputs to archive location
+        Copies model outputs to archive location.
         
         Args:
             params (dict): Dictionary of experiment variables
@@ -240,20 +317,28 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
 
     def read_experiment_parameters(
             self,
-            design_name,
+            design_name=None,
             db=None,
             only_pending=False,
+            *,
+            experiment_ids=None,
     ):
         """
         Reads uncertainties and levers from a design of experiments from the database.
 
         Args:
-            design_name (str): The name of the design to load.
+            design_name (str, optional): If given, only experiments
+                associated with both the scope and the named design
+                are returned, otherwise all experiments associated
+                with the scope are returned.
             db (Database, optional): The Database from which to read experiments.
                 If no db is given, the default `db` for this model is used.
             only_pending (bool, default False): If True, only pending
                 experiments (which have no performance measure results
                 stored in the database) are returned.
+            experiment_ids (Collection, optional):
+                A collection of experiment id's to load.  If given,
+                both `design_name` and `only_pending` are ignored.
 
         Returns:
             pandas.DataFrame:
@@ -271,7 +356,12 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             raise ValueError('no database to read from')
 
         return self.ensure_dtypes(
-            db.read_experiment_parameters(self.scope.name, design_name, only_pending=only_pending)
+            db.read_experiment_parameters(
+                self.scope.name,
+                design_name,
+                only_pending=only_pending,
+                experiment_ids=experiment_ids,
+            )
         )
 
     def read_experiment_measures(
@@ -411,7 +501,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             design (pandas.DataFrame, optional): experiment definitions
                 given as a DataFrame, where each exogenous uncertainties and
                 policy levers is given as a column, and each row is an experiment.
-            evaluator (ema_workbench.Evaluator, optional): Optionally give an
+            evaluator (emat.workbench.Evaluator, optional): Optionally give an
                 evaluator instance.  If not given, a default SequentialEvaluator
                 will be instantiated.
             design_name (str, optional): The name of a design of experiments to
@@ -436,7 +526,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
 
         """
 
-        from ema_workbench import Scenario, Policy, perform_experiments
+        from ..workbench import Scenario, Policy, perform_experiments
 
         # catch user gives only a design, not experiment_parameters
         if isinstance(design, str) and design_name is None:
@@ -470,6 +560,13 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
 
         evaluator = prepare_evaluator(evaluator, self)
 
+        callback = None
+        if db is not None and hasattr(db, 'callback_factory'):
+            callback = db.callback_factory(
+                scope=self.scope,
+                design_name=design_name,
+            )
+
         with evaluator:
             experiments, outcomes = perform_experiments(
                 self,
@@ -477,6 +574,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 policies=policies,
                 zip_over={'scenarios', 'policies'},
                 evaluator=evaluator,
+                callback=callback,
             )
         experiments.index = design.index
 
@@ -493,12 +591,50 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
         for i in self.scope.get_constants():
             experiments_[i.name] = i.value
 
-        return self.ensure_dtypes(pd.concat([
+        result = self.ensure_dtypes(pd.concat([
             experiments_,
             outcomes
         ], axis=1, sort=False))
+        from ..experiment.experimental_design import ExperimentalDesign
+        result = ExperimentalDesign(result)
+        result.scope = self.scope
+        result.name = getattr(design, 'name', None)
+        result.sampler_name = getattr(design, 'sampler_name', None)
+        return result
 
+    def run_reference_experiment(
+            self,
+            evaluator=None,
+            *,
+            db=None,
+    ):
+        """
+        Runs a reference experiment using this model.
 
+        This single experiment includes a complete set of input values for
+        all exogenous uncertainties (a Scenario) and all policy levers
+        (a Policy). Each is set to the default value indicated by the scope.
+
+        Args:
+            evaluator (emat.workbench.Evaluator, optional): Optionally give an
+                evaluator instance.  If not given, a default SequentialEvaluator
+                will be instantiated.
+            db (Database, optional): The database to use for loading and saving experiments.
+                If none is given, the default database for this model is used.
+                If there is no default db, and none is given here,
+                the results are not stored in a database. Set to False to explicitly
+                not use the default database, even if it exists.
+
+        Returns:
+            pandas.DataFrame:
+                A DataFrame that contains all uncertainties, levers, and measures
+                for the experiments.
+
+        """
+        if db is None:
+            db = self.db
+        ref = self.design_experiments(sampler='ref', db=db)
+        return self.run_experiments(ref, evaluator=evaluator, db=db)
 
     def create_metamodel_from_data(
             self,
@@ -526,8 +662,8 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 a column for each performance measure. The index
                 for the outputs should match the index for the
                 `experiment_inputs`, so that the I-O matches row-by-row.
-            output_transforms (dict): A mapping of performance measure
-                transforms to use in meta-model estimation and application.
+            output_transforms (dict): Deprecated.  Specify the
+                output transforms directly in the scope instead.
             metamodel_id (int, optional): An identifier for this meta-model.
                 If not given, a unique id number will be created randomly.
             include_measures (Collection[str], optional): If provided, only
@@ -554,61 +690,19 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 function, accepts keyword arguments as inputs and
                 returns a dictionary of (measure name: value) pairs.
         """
-        from .core_python import PythonCoreModel
-        from .meta_model import MetaModel
-
-        db = db if db is not None else self.db
-
-        experiment_inputs = self.ensure_dtypes(experiment_inputs)
-
-        if metamodel_id is None:
-            if db is not None:
-                scope_name = self.scope.name
-                metamodel_id = db.get_new_metamodel_id(scope_name)
-            else:
-                metamodel_id = np.random.randint(1,2**63,dtype='int64')
-
-        if output_transforms is None:
-            output_transforms = {}
-
-        if include_measures is not None:
-            experiment_outputs = experiment_outputs[[i for i in include_measures
-                                                     if i in experiment_outputs.columns]]
-            output_transforms = {i: output_transforms[i]
-                                 for i in include_measures
-                                 if i in output_transforms }
-            
-        if exclude_measures is not None:
-            experiment_outputs = experiment_outputs.drop(exclude_measures, axis=1)
-            for i in exclude_measures:
-                del output_transforms[i]
-
-        disabled_outputs = [i for i in self.scope.get_measure_names()
-                            if i not in experiment_outputs.columns]
-
-        func = MetaModel(
-            experiment_inputs,
-            experiment_outputs,
-            output_transforms,
-            disabled_outputs,
-            random_state,
-            experiment_stratification,
+        from .meta_model import create_metamodel
+        return create_metamodel(
+            scope=self.scope,
+            experiments=pd.concat([experiment_inputs, experiment_outputs], axis=1),
+            metamodel_id=metamodel_id,
+            db=db,
+            include_measures=include_measures,
+            exclude_measures=exclude_measures,
+            random_state=random_state,
+            experiment_stratification=experiment_stratification,
             suppress_converge_warnings=suppress_converge_warnings,
             regressor=regressor,
-        )
-
-        scope_ = self.scope.duplicate(strip_measure_transforms=True, 
-                                      include_measures=include_measures,
-                                      exclude_measures=exclude_measures)
-
-        return PythonCoreModel(
-            func,
-            configuration = None,
-            scope=scope_,
-            safe=True,
-            db = db,
-            name=self.name+"Meta",
-            metamodel_id=metamodel_id,
+            name=None,
         )
 
     def create_metamodel_from_design(
@@ -652,11 +746,13 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
         """
         db = db if db is not None else self.db
 
-        if db is not None:
-            check_df = db.read_experiment_parameters(self.scope.name, design_name, only_pending=True)
-            if not check_df.empty:
-                from ..exceptions import PendingExperimentsError
-                raise PendingExperimentsError(f'design "{design_name}" has pending experiments')
+        if db is None:
+            raise ValueError("db is None")
+
+        check_df = db.read_experiment_parameters(self.scope.name, design_name, only_pending=True)
+        if not check_df.empty:
+            from ..exceptions import PendingExperimentsError
+            raise PendingExperimentsError(f'design "{design_name}" has pending experiments')
 
         experiment_inputs = db.read_experiment_parameters(self.scope.name, design_name)
         experiment_outputs = db.read_experiment_measures(self.scope.name, design_name)
@@ -919,7 +1015,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             alg = algorithm.__name__
 
         if reference is not None:
-            from ema_workbench import Policy, Scenario
+            from ..workbench import Policy, Scenario
             if searchover == 'levers' and not isinstance(reference, Scenario):
                 reference = Scenario("ReferenceScenario", **reference)
             elif searchover == 'uncertainties' and not isinstance(reference, Policy):
@@ -958,7 +1054,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 with evaluator:
 
                     if epsilons == 'auto':
-                        from ema_workbench import perform_experiments
+                        from ..workbench import perform_experiments
                         if searchover == 'levers':
                             _, trial_outcomes = perform_experiments(
                                 self,
@@ -1235,16 +1331,16 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
 
         if robust_results is None:
             if evaluator is None:
-                from ema_workbench.em_framework import SequentialEvaluator
+                from ..workbench.em_framework import SequentialEvaluator
                 evaluator = SequentialEvaluator(self)
 
             if not isinstance(evaluator, BaseEvaluator):
                 from dask.distributed import Client
                 if isinstance(evaluator, Client):
-                    from ema_workbench.em_framework.ema_distributed import DistributedEvaluator
+                    from ..workbench.em_framework.ema_distributed import DistributedEvaluator
                     evaluator = DistributedEvaluator(self, client=evaluator)
 
-            from ema_workbench.em_framework.samplers import sample_uncertainties, sample_levers
+            from ..workbench.em_framework.samplers import sample_uncertainties, sample_levers
 
             if isinstance(scenarios, int):
                 n_scenarios = scenarios
@@ -1268,3 +1364,17 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 print("policies=", policies, file=notes)
 
         return robust_results
+
+    def io_experiment(self, params):
+        """
+        Run an experiment, and return a dictionary of inputs and outputs together.
+
+        Args:
+            params: dict
+
+        Returns:
+            dict
+        """
+        out = self.run_experiment(params).copy()
+        out.update(params)
+        return out

@@ -121,8 +121,8 @@ def log_to_stderr(level=None, top=False, workbench=True):
         level = DEFAULT_LEVEL
 
     if workbench:
-        import ema_workbench.util.ema_logging
-        ema_workbench.util.ema_logging.LOGGER_NAME = LOGGER_NAME
+        from ..workbench.util import ema_logging
+        ema_logging.LOGGER_NAME = LOGGER_NAME
 
     logger = get_logger() if not top else logging.getLogger()
 
@@ -141,17 +141,18 @@ def log_to_stderr(level=None, top=False, workbench=True):
     logger.setLevel(level)
 
     if workbench:
-        ema_workbench.util.ema_logging._rootlogger = logger
+        from ..workbench.util import ema_logging
+        ema_logging._rootlogger = logger
         import importlib
-        existing_module_loggers = list(ema_workbench.util.ema_logging._module_loggers.keys())
-        ema_workbench.util.ema_logging._module_loggers.clear()
+        existing_module_loggers = list(ema_logging._module_loggers.keys())
+        ema_logging._module_loggers.clear()
         for module_name in existing_module_loggers:
             try:
                 module = importlib.import_module(module_name)
             except ImportError:
                 pass
             else:
-                module._logger = ema_workbench.util.ema_logging.get_module_logger(module_name)
+                module._logger = ema_logging.get_module_logger(module_name)
 
     return get_logger()
 
@@ -215,12 +216,17 @@ class TimingLog:
 
 
 
-import ipywidgets as widgets
+try:
+    import ipywidgets as widgets
+except ImportError:
+    widgets = None
 
 class OutputWidgetHandler(logging.Handler):
     """ Custom logging handler sending logs to an output widget """
 
     def __init__(self, *args, **kwargs):
+        if widgets is None:
+            raise ModuleNotFoundError('ipywidgets')
         super(OutputWidgetHandler, self).__init__(*args, **kwargs)
         layout = {
             'width': '100%',
@@ -248,6 +254,8 @@ _widget_logger = None
 _widget_log_handler = None
 
 def get_widget_logger():
+    if widgets is None:
+        raise ModuleNotFoundError('ipywidgets')
     global _widget_logger, _widget_log_handler
     if _widget_logger is None:
         _widget_logger = logging.getLogger('EMAT.widget')

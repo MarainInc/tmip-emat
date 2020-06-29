@@ -174,7 +174,7 @@ def Road_Capacity_Investment(
     average_travel_time1 += (numpy.absolute(lane_width-10)*1000)**0.5
     travel_time_savings = average_travel_time0 - average_travel_time1
     value_of_time_savings = value_of_time * travel_time_savings * input_flow
-    present_cost_of_capacity_expansion = unit_cost_expansion * expand_capacity
+    present_cost_of_capacity_expansion = float(unit_cost_expansion * expand_capacity)
 
     if interest_rate_lock:
         interest_rate = 0.03
@@ -201,3 +201,93 @@ def Road_Capacity_Investment(
         net_benefits = value_of_time_savings + cost_of_capacity_expansion,
     )
 
+
+
+def _Road_Capacity_Investment_CmdLine():
+    """
+    This is a demo for calling a core model function on the command line.
+    """
+    import argparse, pandas, os, numpy, sys, warnings
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--levers', type=str, default='levers.yml', help='Levers Yaml File')
+    parser.add_argument('--uncs', type=str, default="uncs.yml", help='Uncertainties Yaml File')
+    parser.add_argument('--no-random-crashes', action='store_true', help='disable random crashes')
+
+    args = parser.parse_args()
+    import logging
+    logger = logging.getLogger('emat.RoadTest')
+    file_handler = logging.FileHandler("emat-road-test.log")
+    file_handler.setLevel(10)
+    LOG_FORMAT = '[%(asctime)s] %(name)s.%(levelname)s: %(message)s'
+    file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    console_handler = logging.StreamHandler(stream=sys.stdout)
+    console_handler.setLevel(20)
+    console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+    logger.setLevel(10)
+
+    logger.info("running emat-road-test-demo")
+    logger.debug(str(args))
+    logger.debug(str(os.getcwd()))
+
+    import yaml
+    if os.path.exists(args.levers):
+        with open(args.levers, 'rt') as f:
+            levers = yaml.safe_load(f)
+    else:
+        levers = {'mandatory_unused_lever':42}
+    if os.path.exists(args.uncs):
+        with open(args.uncs, 'rt') as f:
+            uncs = yaml.safe_load(f)
+    else:
+        uncs = {}
+
+    if 'mandatory_unused_lever' not in levers:
+        raise ValueError("missing 'mandatory_unused_lever'")
+    if levers['mandatory_unused_lever'] != 42:
+        raise ValueError("incorrect value for 'mandatory_unused_lever', must be 42")
+
+    if 'unit_cost_expansion' in uncs:
+        raise ValueError("cannot give 'unit_cost_expansion', use 'labor_unit_cost_expansion' and 'materials_unit_cost_expansion'")
+    if uncs.get('labor_unit_cost_expansion', 0) <= uncs.get('materials_unit_cost_expansion', 0):
+        raise ValueError("'labor_unit_cost_expansion' cannot be less than or equal 'materials_unit_cost_expansion'")
+    if uncs.get('labor_unit_cost_expansion', 0) > uncs.get('materials_unit_cost_expansion', 0)*2:
+        raise ValueError("'labor_unit_cost_expansion' cannot be more than double 'materials_unit_cost_expansion'")
+    unit_cost_expansion = uncs.pop('labor_unit_cost_expansion', 0) + uncs.pop('materials_unit_cost_expansion', 0)
+    uncs['unit_cost_expansion'] = unit_cost_expansion
+
+    # (pseudo)random crash
+    if not args.no_random_crashes:
+        if 'expand_capacity' in levers and levers['expand_capacity'] > 90 and not os.path.exists('prevent_random_crash.txt'):
+            with open('prevent_random_crash.txt', 'wt') as f:
+                f.write("this file will prevent random crashes in `emat-road-test-demo`")
+            logger.error("Random crash, ha ha!")
+            sys.exit(-9)
+
+    try:
+        for k,v in levers.items():
+            logger.debug(f"lever: {k} = {v}")
+        for k,v in uncs.items():
+            logger.debug(f"uncertainty: {k} = {v}")
+
+        result = Road_Capacity_Investment(**levers, **uncs)
+        for k,v in result.items():
+            logger.debug(f"result: {k} = {v}")
+
+        result1 = {str(k):float(result[k]) for k in ['no_build_travel_time','build_travel_time','time_savings']}
+        result2 = pandas.DataFrame({
+            'value_of_time_savings': [numpy.exp(result['value_of_time_savings']), numpy.nan],
+            'present_cost_expansion': [numpy.nan, result['present_cost_expansion']],
+            'cost_of_capacity_expansion': [numpy.exp(result['cost_of_capacity_expansion']), numpy.nan],
+            'net_benefits': [numpy.nan,result['net_benefits']],
+        }, index=['exp','plain'])
+
+        with open('output.yaml', 'wt') as f:
+            yaml.safe_dump(result1, f)
+        result2.to_csv('output.csv.gz')
+
+        logger.info("emat-road-test-demo completed without errors")
+    except:
+        logger.exception("unintentional crash")
+        sys.exit(-8)

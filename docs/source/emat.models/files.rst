@@ -4,41 +4,44 @@
 Files-Based Model
 -----------------
 
-.. autoclass:: FilesCoreModel
-    :show-inheritance:
-    :members:
-    :exclude-members:
-        setup, run, load_measures, post_process, get_experiment_archive_path, archive,
-        start_transcad, run_model, model_init, load_archived_measures, add_parser
+You can connect any bespoke transportation model to TMIP-EMAT as long
+as it satisfies these requirements:
 
+- You can prepare a model run by manipulating files from within Python,
+  including tasks such as copying or renaming files, editing the text
+  of script or configuration files, or executing one or more "command line"
+  programs (e.g. batch files) with defined arguments.
+- You can execute a model run, including any necessary post-processing,
+  either directly from Python, or by executing one or more "command line"
+  programs (e.g. batch files) with defined arguments.
+- You can extract individual performance measures of interest by reading
+  and parsing one or more output files (which can be output from the main
+  model or any post-processing routines) from within Python.
 
-This class defines a common implementation system for bespoke models
-that generate performance measure attributes that can be read from one
-or more files on disk after a model run.  Many of the abstract methods
-defined in the :class:`AbstractCoreModel` remain to be overloaded, but
-a standard load_measures implementation is defined here.
+The ability to tap into other programs via the command line allows TMIP-EMAT
+to be used with nearly any transportation modeling tool, including most
+commercial software.
 
-.. automethod:: FilesCoreModel.add_parser
-.. automethod:: FilesCoreModel.load_measures
-.. automethod:: FilesCoreModel.load_archived_measures
+To actually create the linkage between TMIP-EMAT and your bespoke transportation
+model, you must define a new Python `class` that derives from the
+:class:`FilesCoreModel` class, and at a minimum write implementations for
+these methods:
 
-Parsing Files
-~~~~~~~~~~~~~
+- :meth:`AbstractCoreModel.setup`
+- :meth:`AbstractCoreModel.run`
+- :meth:`AbstractCoreModel.archive`
 
-The :meth:`FilesCoreModel.add_parser` method accepts :class:`FileParser` objects,
-which can be used to read performance measures from individual files.  For an
-illustration of how to use parsers, see the source code for the :class:`GBNRTCModel`.
+The :class:`FilesCoreModel` class also includes default implementations for
+`get_experiment_archive_path` and `post_process`, but it may be appropriate
+to overload these methods into a custom class as well.
 
-.. autoclass:: emat.model.core_files.parsers.FileParser
-    :members:
-
-.. autoclass:: emat.model.core_files.parsers.TableParser
-    :show-inheritance:
-    :members:
-
-.. autoclass:: emat.model.core_files.parsers.Getter
-
+A walk-through for building and using a :class:`FilesCoreModel` subclass
+in your own module is provided below, although with a more detailed
+reference for the methods defined for the :class:`FilesCoreModel` class.
 
 .. toctree::
 
+    interface-walkthrough
     table_parse_example
+    mapping_parse_example
+    files-api
