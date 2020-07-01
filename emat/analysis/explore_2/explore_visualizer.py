@@ -1,6 +1,7 @@
 import numpy
 import pandas
 import warnings
+import functools
 from ...viz import colors
 from ...scope.box import GenericBox
 from traitlets import TraitError
@@ -57,6 +58,7 @@ class Visualizer(DataFrameExplorer):
 		self._two_way = {}
 		self._splom = {}
 		self._hmm = {}
+		self._selection_feature_score_fig = None
 
 		self._status_txt = widget.HTML(
 			value="<i>Explore Status Not Set</i>",
@@ -124,50 +126,73 @@ class Visualizer(DataFrameExplorer):
 			self._update_histogram_figure(col)
 		else:
 			selection = self.active_selection()
+			if self.active_selection_deftype() == 'box':
+				box = self._selection_defs[self.active_selection_name()]
+			else:
+				box = None
 			fig = new_histogram_figure(
 				selection, self.data[col], bins,
 				marker_line_width=marker_line_width,
 				on_deselect=lambda *a: self._on_deselect_from_histogram(*a,name=col),
 				on_select=lambda *a: self._on_select_from_histogram(*a,name=col),
+				box=box,
+				title_text=self.scope.shortname(col),
+				ref_point=self.reference_point(col),
 			)
 			self._figures_hist[col] = fig
-			self._draw_boxes_on_figure(col)
 
 	def _create_frequencies_figure(self, col, labels=None, *, marker_line_width=None):
 		if col in self._figures_freq:
 			self._update_frequencies_figure(col)
 		else:
 			selection = self.active_selection()
+			if self.active_selection_deftype() == 'box':
+				box = self._selection_defs[self.active_selection_name()]
+			else:
+				box = None
 			fig = new_frequencies_figure(
 				selection, self.data[col], labels,
 				marker_line_width=marker_line_width,
-				on_deselect=lambda *a: self._on_deselect_from_histogram(*a, name=col),
-				on_select=lambda *a: self._on_select_from_freq(*a, name=col),
+				on_deselect=functools.partial(self._on_deselect_from_histogram, name=col),
+				on_select=functools.partial(self._on_select_from_freq, name=col),
+				#on_click=functools.partial(self._on_click_from_frequencies, name=col), # not always stable
+				box=box,
+				title_text=self.scope.shortname(col),
+				ref_point=self.reference_point(col),
 			)
 			self._figures_freq[col] = fig
-			self._draw_boxes_on_figure(col)
 
 	def _update_histogram_figure(self, col):
 		if col in self._figures_hist:
 			fig = self._figures_hist[col]
+			if self.active_selection_deftype() == 'box':
+				box = self._selection_defs[self.active_selection_name()]
+			else:
+				box = None
 			with fig.batch_update():
 				update_histogram_figure(
 					fig,
 					self.active_selection(),
 					self.data[col],
+					box=box,
+					ref_point=self.reference_point(col),
 				)
-				self._draw_boxes_on_figure(col)
 
 	def _update_frequencies_figure(self, col):
 		if col in self._figures_freq:
 			fig = self._figures_freq[col]
+			if self.active_selection_deftype() == 'box':
+				box = self._selection_defs[self.active_selection_name()]
+			else:
+				box = None
 			with fig.batch_update():
 				update_frequencies_figure(
 					fig,
 					self.active_selection(),
 					self.data[col],
+					box=box,
+					ref_point=self.reference_point(col),
 				)
-				self._draw_boxes_on_figure(col)
 
 	def _compute_histogram(self, col, selection, bins=None):
 		if col not in self._base_histogram:
@@ -208,30 +233,7 @@ class Visualizer(DataFrameExplorer):
 
 			if self.active_selection_deftype() == 'box':
 				box = self._selection_defs[self.active_selection_name()]
-
-				min_value, max_value = None, None
-				# Extract min and max from scope if possible
-				if name not in self.scope.get_measure_names():
-					min_value = self.scope[name].min
-					max_value = self.scope[name].max
-				# Extract min and max from .data if still missing
-				if min_value is None:
-					min_value = self.data[name].min()
-				if max_value is None:
-					max_value = self.data[name].max()
-
-				close_to_max_value = max_value - 0.03 * (max_value - min_value)
-				close_to_min_value = min_value + 0.03 * (max_value - min_value)
-				_logger.debug("name: %s  limits: %f - %f", name, close_to_min_value, close_to_max_value)
-
-				if select_min <= close_to_min_value:
-					select_min = None
-				if select_max >= close_to_max_value:
-					select_max = None
-
-				_logger.debug("name: %s  final range: %f - %f", name, select_min or numpy.nan, select_max or numpy.nan)
-
-				box.set_bounds(name, select_min, select_max)
+				box = interpret_histogram_selection(name, args[2].xrange, box, self.data, self.scope)
 				self.new_selection(box, name=self.active_selection_name())
 				self._active_selection_changed()
 		except:
@@ -257,7 +259,7 @@ class Visualizer(DataFrameExplorer):
 
 		fig = self.get_figure(name)
 
-		toggles = fig.data[0].x[select_min:select_max]
+		toggles = fig.layout['meta']['x_tick_values'][select_min:select_max]
 		fig.for_each_trace(_deselect_all_points)
 
 		if self.active_selection_deftype() == 'box':
@@ -306,6 +308,7 @@ class Visualizer(DataFrameExplorer):
 			self._active_selection_changing_ = True
 			with self._status_pie.batch_update():
 				super()._active_selection_changed()
+				self._pre_update_selection_feature_score_figure()
 				self._update_status()
 				for col in self._figures_hist:
 					self._update_histogram_figure(col)
@@ -318,6 +321,7 @@ class Visualizer(DataFrameExplorer):
 					})
 				self._update_sploms()
 				self._update_hmms()
+				self._update_selection_feature_score_figure()
 		finally:
 			del self._active_selection_changing_
 
@@ -371,136 +375,136 @@ class Visualizer(DataFrameExplorer):
 		fig.layout.title.font.color = 'black'
 		fig.layout.title.text = col
 
-	def _draw_boxes_on_figure(self, col):
-
-		if self.active_selection_deftype() != 'box':
-			self._clear_boxes_on_figure(col)
-			return
-
-		fig = self.get_figure(col)
-		if fig is None: return
-		box = self._selection_defs[self.active_selection_name()]
-		if box is None:
-			self._clear_boxes_on_figure(col)
-			return
-
-		from ...scope.box import Bounds
-
-		if col in box.thresholds:
-			x_lo, x_hi = None, None
-			thresh = box.thresholds.get(col)
-			if isinstance(thresh, Bounds):
-				x_lo, x_hi = thresh
-			if isinstance(thresh, set):
-				x_lo, x_hi = [], []
-				for tickval, ticktext in enumerate(fig.data[0].x):
-					if ticktext in thresh:
-						x_lo.append(tickval-0.45)
-						x_hi.append(tickval+0.45)
-
-			try:
-				x_range = (
-					fig.data[0].x[0] - (fig.data[0].width[0] / 2),
-					fig.data[0].x[-1] + (fig.data[0].width[-1] / 2),
-				)
-			except TypeError:
-				x_range = (
-					-0.5,
-					len(fig.data[0].x)+0.5
-				)
-			x_width = x_range[1] - x_range[0]
-			if x_lo is None:
-				x_lo = x_range[0]-x_width * 0.02
-			if x_hi is None:
-				x_hi = x_range[1]+x_width * 0.02
-			if not isinstance(x_lo, list):
-				x_lo = [x_lo]
-			if not isinstance(x_hi, list):
-				x_hi = [x_hi]
-
-			y_lo, y_hi = None, None
-			_y_max = sum(t.y for t in fig.select_traces()).max()
-			y_range = (
-				-_y_max * 0.02,
-				_y_max * 1.04,
-			)
-			y_width = y_range[1] - y_range[0]
-			if y_lo is None:
-				y_lo = y_range[0]-y_width * 0
-			if y_hi is None:
-				y_hi = y_range[1]+y_width * 0
-			if not isinstance(y_lo, list):
-				y_lo = [y_lo]
-			if not isinstance(y_hi, list):
-				y_hi = [y_hi]
-
-			x_pairs = list(zip(x_lo, x_hi))
-			y_pairs = list(zip(y_lo, y_hi))
-
-			background_shapes = [
-				# Rectangle background color
-				go.layout.Shape(
-					type="rect",
-					xref="x1",
-					yref="y1",
-					x0=x_pair[0],
-					y0=y_pair[0],
-					x1=x_pair[1],
-					y1=y_pair[1],
-					line=dict(
-						width=0,
-					),
-					fillcolor=colors.DEFAULT_BOX_BG_COLOR,
-					opacity=0.2,
-					layer="below",
-				)
-				for x_pair in x_pairs
-				for y_pair in y_pairs
-			]
-
-			foreground_shapes = [
-				# Rectangle reference to the axes
-				go.layout.Shape(
-					type="rect",
-					xref="x1",
-					yref="y1",
-					x0=x_pair[0],
-					y0=y_pair[0],
-					x1=x_pair[1],
-					y1=y_pair[1],
-					line=dict(
-						width=2,
-						color=colors.DEFAULT_BOX_LINE_COLOR,
-					),
-					fillcolor='rgba(0,0,0,0)',
-					opacity=1.0,
-				)
-				for x_pair in x_pairs
-				for y_pair in y_pairs
-			]
-
-			refpoint = self.reference_point(col)
-			if refpoint is not None:
-				if refpoint in (True, False):
-					refpoint = str(refpoint).lower()
-				foreground_shapes.append(
-					go.layout.Shape(
-						type="line",
-						xref="x1",
-						yref="y1",
-						x0=refpoint,
-						y0=y_range[0],
-						x1=refpoint,
-						y1=y_range[1],
-						**colors.DEFAULT_REF_LINE_STYLE,
-					)
-				)
-
-			fig.layout.shapes=background_shapes+foreground_shapes
-			fig.layout.title.font.color = colors.DEFAULT_BOX_LINE_COLOR
-			fig.layout.title.text = f'<b>{col}</b>'
-		else:
-			self._clear_boxes_on_figure(col)
+	# def _draw_boxes_on_figure(self, col):
+	#
+	# 	if self.active_selection_deftype() != 'box':
+	# 		self._clear_boxes_on_figure(col)
+	# 		return
+	#
+	# 	fig = self.get_figure(col)
+	# 	if fig is None: return
+	# 	box = self._selection_defs[self.active_selection_name()]
+	# 	if box is None:
+	# 		self._clear_boxes_on_figure(col)
+	# 		return
+	#
+	# 	from ...scope.box import Bounds
+	#
+	# 	if col in box.thresholds:
+	# 		x_lo, x_hi = None, None
+	# 		thresh = box.thresholds.get(col)
+	# 		if isinstance(thresh, Bounds):
+	# 			x_lo, x_hi = thresh
+	# 		if isinstance(thresh, set):
+	# 			x_lo, x_hi = [], []
+	# 			for tickval, ticktext in enumerate(fig.data[0].x):
+	# 				if ticktext in thresh:
+	# 					x_lo.append(tickval-0.45)
+	# 					x_hi.append(tickval+0.45)
+	#
+	# 		try:
+	# 			x_range = (
+	# 				fig.data[0].x[0] - (fig.data[0].width[0] / 2),
+	# 				fig.data[0].x[-1] + (fig.data[0].width[-1] / 2),
+	# 			)
+	# 		except TypeError:
+	# 			x_range = (
+	# 				-0.5,
+	# 				len(fig.data[0].x)+0.5
+	# 			)
+	# 		x_width = x_range[1] - x_range[0]
+	# 		if x_lo is None:
+	# 			x_lo = x_range[0]-x_width * 0.02
+	# 		if x_hi is None:
+	# 			x_hi = x_range[1]+x_width * 0.02
+	# 		if not isinstance(x_lo, list):
+	# 			x_lo = [x_lo]
+	# 		if not isinstance(x_hi, list):
+	# 			x_hi = [x_hi]
+	#
+	# 		y_lo, y_hi = None, None
+	# 		_y_max = sum(t.y for t in fig.select_traces()).max()
+	# 		y_range = (
+	# 			-_y_max * 0.02,
+	# 			_y_max * 1.04,
+	# 		)
+	# 		y_width = y_range[1] - y_range[0]
+	# 		if y_lo is None:
+	# 			y_lo = y_range[0]-y_width * 0
+	# 		if y_hi is None:
+	# 			y_hi = y_range[1]+y_width * 0
+	# 		if not isinstance(y_lo, list):
+	# 			y_lo = [y_lo]
+	# 		if not isinstance(y_hi, list):
+	# 			y_hi = [y_hi]
+	#
+	# 		x_pairs = list(zip(x_lo, x_hi))
+	# 		y_pairs = list(zip(y_lo, y_hi))
+	#
+	# 		background_shapes = [
+	# 			# Rectangle background color
+	# 			go.layout.Shape(
+	# 				type="rect",
+	# 				xref="x1",
+	# 				yref="y1",
+	# 				x0=x_pair[0],
+	# 				y0=y_pair[0],
+	# 				x1=x_pair[1],
+	# 				y1=y_pair[1],
+	# 				line=dict(
+	# 					width=0,
+	# 				),
+	# 				fillcolor=colors.DEFAULT_BOX_BG_COLOR,
+	# 				opacity=0.2,
+	# 				layer="below",
+	# 			)
+	# 			for x_pair in x_pairs
+	# 			for y_pair in y_pairs
+	# 		]
+	#
+	# 		foreground_shapes = [
+	# 			# Rectangle reference to the axes
+	# 			go.layout.Shape(
+	# 				type="rect",
+	# 				xref="x1",
+	# 				yref="y1",
+	# 				x0=x_pair[0],
+	# 				y0=y_pair[0],
+	# 				x1=x_pair[1],
+	# 				y1=y_pair[1],
+	# 				line=dict(
+	# 					width=2,
+	# 					color=colors.DEFAULT_BOX_LINE_COLOR,
+	# 				),
+	# 				fillcolor='rgba(0,0,0,0)',
+	# 				opacity=1.0,
+	# 			)
+	# 			for x_pair in x_pairs
+	# 			for y_pair in y_pairs
+	# 		]
+	#
+	# 		refpoint = self.reference_point(col)
+	# 		if refpoint is not None:
+	# 			if refpoint in (True, False):
+	# 				refpoint = str(refpoint).lower()
+	# 			foreground_shapes.append(
+	# 				go.layout.Shape(
+	# 					type="line",
+	# 					xref="x1",
+	# 					yref="y1",
+	# 					x0=refpoint,
+	# 					y0=y_range[0],
+	# 					x1=refpoint,
+	# 					y1=y_range[1],
+	# 					**colors.DEFAULT_REF_LINE_STYLE,
+	# 				)
+	# 			)
+	#
+	# 		fig.layout.shapes=background_shapes+foreground_shapes
+	# 		fig.layout.title.font.color = colors.DEFAULT_BOX_LINE_COLOR
+	# 		fig.layout.title.text = f'<b>{col}</b>'
+	# 	else:
+	# 		self._clear_boxes_on_figure(col)
 
 
 	def _get_widgets(self, *include):
@@ -632,9 +636,21 @@ class Visualizer(DataFrameExplorer):
 			box=box,
 			refpoint=self._reference_point,
 			figure_class=go.FigureWidget,
+			on_select=functools.partial(self._on_select_from_splom, name=key),
 		)
 
 		return self._splom[key]
+
+	def _on_select_from_splom(self, row, col, trace, points, selection, name=None):
+		# if len(points.point_inds)==0:
+		# 	return
+		# print("name=",name)
+		# print(row, col, "->", selection)
+		# print( "->", selection.xrange)
+		# print( "->", selection.yrange)
+		# print( "->", type(selection.yrange))
+		# trace.selectedpoints = None
+		pass
 
 	def _update_sploms(self):
 		box = None
@@ -661,7 +677,7 @@ class Visualizer(DataFrameExplorer):
 			cols='M',
 			rows='L',
 			emph_selected=True,
-			show_points=-1,
+			show_points=30,
 			size=150,
 	):
 		if not isinstance(rows, str):
@@ -780,9 +796,11 @@ class Visualizer(DataFrameExplorer):
 		if name is None:
 			name = self.active_selection_name()
 		if self.selection_deftype(name) == 'box':
-			box = self._selection_defs[self.active_selection_name()]
-			box.clear()
-			self[name] = box
+			box = self._selection_defs[name]
+			if box.thresholds:
+				box.clear()
+				self[name] = box
+				self._active_selection_changed()
 
 	def new_box(self, name, **kwargs):
 		from ...scope.box import Box
@@ -794,3 +812,91 @@ class Visualizer(DataFrameExplorer):
 			color=colors.DEFAULT_HIGHLIGHT_COLOR,
 			activate=activate,
 		)
+
+	def selection_feature_scores(self, name=None):
+		if name is None:
+			name = self.active_selection_name()
+		if self.selection_deftype(name) == 'box':
+			box = self._selection_defs[name]
+			from ..feature_scoring import box_feature_scores
+			try:
+				return box_feature_scores(
+					self.scope,
+					box,
+					self.data,
+					return_type='styled',
+					db=None,
+					random_state=None,
+					cmap='viridis',
+					exclude_measures=True,
+				)
+			except ValueError:
+				return pandas.DataFrame(
+					index=['target'],
+					columns=[],
+					data=None,
+				)
+		else:
+			from ..feature_scoring import target_feature_scores
+			target = self._selections[name]
+			return target_feature_scores(
+				self.scope,
+				target,
+				self.data,
+				return_type='styled',
+				db=None,
+				random_state=None,
+				cmap='viridis',
+				exclude_measures=True,
+			)
+
+
+	def selection_feature_score_figure(self):
+		try:
+			scores = self.selection_feature_scores().data.iloc[0]
+		except:
+			scores = {}
+		y = self.scope.get_parameter_names(False)
+		x = [scores.get(yi, numpy.nan) for yi in y]
+		fmt = lambda x: x if isinstance(x, str) else "{:.3f}".format(x)
+		t = [fmt(scores.get(yi, "N/A")) for yi in y]
+		fig = go.FigureWidget(
+			go.Bar(
+				x=x,
+				y=y,
+				text=t,
+				orientation='h',
+				textposition='outside',
+				texttemplate='%{text}',
+				marker_color=colors.DEFAULT_HIGHLIGHT_COLOR,
+			),
+			layout=dict(
+				margin=dict(t=0, b=0, l=0, r=0),
+				height = len(x) * 22,
+			)
+		)
+		self._selection_feature_score_fig = fig
+		return fig
+
+	def _pre_update_selection_feature_score_figure(self):
+		if self._selection_feature_score_fig is None:
+			return
+		fig = self._selection_feature_score_fig
+		fig.data[0].marker.color = 'yellow'
+
+	def _update_selection_feature_score_figure(self):
+		if self._selection_feature_score_fig is None:
+			return
+		fig = self._selection_feature_score_fig
+		try:
+			scores = self.selection_feature_scores().data.iloc[0]
+		except:
+			scores = {}
+		y = self.scope.get_parameter_names(False)
+		x = [scores.get(yi, numpy.nan) for yi in y]
+		fmt = lambda x: x if isinstance(x, str) else "{:.3f}".format(x)
+		t = [fmt(scores.get(yi, "N/A")) for yi in y]
+		with fig.batch_update():
+			fig.data[0].x = x
+			fig.data[0].text = t
+			fig.data[0].marker.color = colors.DEFAULT_HIGHLIGHT_COLOR
