@@ -13,6 +13,7 @@ def feature_scores(
 		db=None,
 		random_state=None,
 		cmap='viridis',
+		measures=None,
 ):
 	"""
 	Calculate feature scores based on a design of experiments.
@@ -31,6 +32,9 @@ def feature_scores(
 			Random state to use.
 		cmap (string or colormap, default 'viridis'): matplotlib colormap
 			to use for rendering.
+		measures (Collection, optional): The performance measures on which
+			feature scores are to be generated.  By default, all measures are
+			included.
 
 	Returns:
 		xmle.Elem or pandas.DataFrame:
@@ -70,6 +74,8 @@ def feature_scores(
 	for c in outcomes.columns:
 		if c not in scope_measures and c not in drop_outcomes:
 			drop_outcomes.append(c)
+		if measures is not None and c not in measures and c not in drop_outcomes:
+			drop_outcomes.append(c)
 
 	outcomes_ = outcomes.drop(columns=drop_outcomes)
 	inputs_ = inputs.drop(columns=drop_inputs)
@@ -79,6 +85,11 @@ def feature_scores(
 	# restore original row/col ordering
 	orig_col_order = [c for c in outcomes.columns if c in scope_measures]
 	fs = fs.reindex(index=inputs.columns, columns=orig_col_order)
+
+	# remove all NA columns and rows
+	drop_c = list(fs.columns[(~pandas.isna(fs)).sum() == 0])
+	drop_r = list(fs.index[(~pandas.isna(fs)).sum(axis=1) == 0])
+	fs = fs.drop(index=drop_r, columns=drop_c)
 
 	if return_type.lower() in ('figure','styled'):
 		try:
@@ -303,15 +314,17 @@ def _col_breakpoints(
 		return numpy.quantile(arr, qtiles)
 	raise ValueError(f'unknown `break_spacing` value {break_spacing}')
 
-def measure_marginal_feature_scores(
+def threshold_feature_scores(
 		scope,
 		measure_name,
 		design,
 		return_type='styled',
+		*,
 		db=None,
 		random_state=None,
 		cmap='viridis',
-		*,
+		z_min=0,
+		z_max=1,
 		min_tail=5,
 		max_breaks=20,
 		break_spacing='linear',
@@ -347,29 +360,156 @@ def measure_marginal_feature_scores(
 		).iloc[0])
 
 	result = pandas.DataFrame(tracking)
+	name_order = []
+	for name in scope.get_parameter_names():
+		if name in result.index:
+			name_order.append(name)
+	for name in result.index:
+		if name not in name_order:
+			name_order.append(name)
+	result = result.reindex(index=name_order)
+
 	if return_type.lower() == 'styled':
 		return result.style.background_gradient(cmap=cmap, axis=0, text_color_threshold=0.5)
 
-	if return_type.lower() == 'figure':
+	if 'figure' in return_type.lower():
 		import plotly.graph_objects as go
-		import plotly.colors
-		colorscheme = getattr(
-			plotly.colors.qualitative,
-			cmap,
-			plotly.colors.qualitative.Light24
+		# import plotly.colors
+		# colorscheme = getattr(
+		# 	plotly.colors.qualitative,
+		# 	cmap,
+		# 	plotly.colors.qualitative.Light24
+		# )
+		# fig = go.Figure()
+		# for n, i in enumerate(result.index):
+		# 	fig.add_trace(go.Scatter(
+		# 		x=result.columns, y=result.loc[i],
+		# 		mode='lines',
+		# 		fillcolor=colorscheme[n % len(colorscheme)],
+		# 		line=dict(width=0, color=colorscheme[n % len(colorscheme)]),
+		# 		stackgroup='one',  # define stack group
+		# 		name=i,
+		# 		hovertemplate="%{y:.3f}",
+		# 	))
+		# fig.update_layout(hovermode="x unified", yaxis_range=(0, 1))
+		# return fig
+		from matplotlib import cm
+
+		base_score = feature_scores(
+			scope=scope,
+			design=design,
+			return_type='dataframe',
+			db=None,
+			random_state=random_state,
+			measures=[measure_name],
 		)
+
+		traces = []
+		max_base_score = base_score.max().max()
+		tick_values = []
+		tick_labels = []
+		colormap = getattr(cm, cmap, cm.viridis)
+
+
+		if 'ridge' in return_type.lower():
+			ridge = True
+			gap = numpy.percentile(result.values.flatten(), 95)
+			linewidth = 3
+			area_alpha = 1.0
+		else:
+			ridge = False
+			gap = numpy.percentile(result.values.flatten(), 95) * 2
+			linewidth = 2
+			area_alpha = 1.0
+
+		for n_reversed in range(len(result)):
+			n = len(result) - n_reversed - 1
+			bs = base_score.loc[measure_name, result.index[n]] / max_base_score
+			if numpy.isnan(bs):
+				bs = 0
+			bs = bs * (z_max-z_min) + z_min
+			color = colormap(bs, bytes=True)
+			dark_color, light_color = _darker_and_lighter_color(numpy.asarray(color)/255)
+			linecolor_ = ", ".join(str(i) for i in dark_color[:3])
+			areacolor_ = ", ".join(str(i) for i in light_color[:3])
+			traces.append(
+				go.Scatter(
+					y=(numpy.zeros(len(result.columns)) if ridge else -result.iloc[n]) + n * gap,
+					x=result.columns,
+					fillcolor='rgba(0,0,0,0)',
+					visible=True,
+					showlegend=False,
+					line=dict(color=f'rgba({linecolor_}, 1.0)', width=0 if ridge else linewidth),
+					name=result.index[n],
+					hovertemplate='%{meta}<br>Rel Import: %{customdata:.3f}<extra>'+measure_name+': %{x:.3s}</extra>',
+					meta=[result.index[n]],
+					customdata=result.iloc[n],
+				)
+			)
+			traces.append(
+				go.Scatter(
+					y=result.iloc[n] + n * gap,
+					x=result.columns,
+					fill='tonexty',
+					name=result.index[n],
+					fillcolor=f'rgba({areacolor_}, {area_alpha})',
+					line=dict(color=f'rgba({linecolor_}, 1.0)', width=linewidth),
+					hovertemplate='%{meta}<br>Rel Import: %{customdata:.3f}<extra>'+measure_name+': %{x:.3s}</extra>',
+					meta=[result.index[n]],
+					customdata=result.iloc[n],
+				)
+			)
+			tick_values.append(n * gap + (gap/3 if ridge else 0))
+			tick_labels.append(result.index[n])
+
 		fig = go.Figure()
-		for n, i in enumerate(result.index):
-			fig.add_trace(go.Scatter(
-				x=result.columns, y=result.loc[i],
-				mode='lines',
-				fillcolor=colorscheme[n % len(colorscheme)],
-				line=dict(width=0, color=colorscheme[n % len(colorscheme)]),
-				stackgroup='one',  # define stack group
-				name=i,
-				hovertemplate="%{y:.3f}",
-			))
-		fig.update_layout(hovermode="x unified", yaxis_range=(0, 1))
+		fig.add_traces(traces)
+
+		fig.update_layout(
+			xaxis_title_text=scope.shortname(measure_name),
+			yaxis_showgrid=False,
+			yaxis_zeroline=False,
+			yaxis_tickvals=tick_values,
+			yaxis_ticktext=tick_labels,
+			yaxis_tickmode='array',
+			showlegend=False,
+			margin=dict(t=0,b=0,l=0,r=0),
+		)
 		return fig
 
 	return result
+
+
+
+def _max_luminosity_color(color, max_lum=0.333, bytes=False):
+	import matplotlib.colors as mc
+	import colorsys
+	try:
+		c = mc.cnames[color]
+	except:
+		c = color
+	c = colorsys.rgb_to_hls(*mc.to_rgb(c))
+	new_c = colorsys.hls_to_rgb(c[0], min(c[1], max_lum), c[2])
+	if bytes:
+		lev = lambda x: max(0,min(255,int(numpy.round(x*255))))
+		return tuple(lev(i) for i in new_c)
+	else:
+		return new_c
+
+def _darker_and_lighter_color(color, lum_diff=0.3, bytes=False):
+	import matplotlib.colors as mc
+	import colorsys
+	try:
+		c = mc.cnames[color]
+	except:
+		c = color
+	hls = colorsys.rgb_to_hls(*mc.to_rgb(c))
+	dark = hls[1] * (1-lum_diff)
+	light = dark + lum_diff
+	new_dark_c = colorsys.hls_to_rgb(hls[0], dark, hls[2])
+	new_light_c = colorsys.hls_to_rgb(hls[0], light, hls[2])
+	if bytes:
+		lev = lambda x: max(0,min(255,int(numpy.round(x*255))))
+		return tuple(lev(i) for i in new_dark_c), tuple(lev(i) for i in new_light_c)
+	else:
+		return new_dark_c, new_light_c
