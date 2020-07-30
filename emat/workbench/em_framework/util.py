@@ -1,6 +1,7 @@
 '''utilities used throughout em_framework'''
 import copy
 from collections import OrderedDict
+from orderedmultidict import omdict
 
 from collections import UserDict
 from collections.abc import MutableMapping  # @UnusedImport
@@ -72,13 +73,13 @@ class NamedObjectMap:
     def __init__(self, type):  # @ReservedAssignment
         super(NamedObjectMap, self).__init__()
         self.type = type
-        self._data = OrderedDict()
+        self._data = omdict()
 
         if not issubclass(type, NamedObject):
             raise TypeError("type must be a NamedObject")
 
     def clear(self):
-        self._data = OrderedDict()
+        self._data = omdict()
 
     def copy(self):
         copy = NamedObjectMap(self.type)
@@ -91,7 +92,7 @@ class NamedObjectMap:
 
     def __getitem__(self, key):
         if isinstance(key, six.integer_types):
-            for i, (_, v) in enumerate(six.iteritems(self._data)):
+            for i, (_, v) in enumerate(self._data.allitems()):
                 if i == key:
                     return v
             raise KeyError(key)
@@ -103,7 +104,7 @@ class NamedObjectMap:
             raise TypeError("can only add " + self.type.__name__ + " objects")
 
         if isinstance(key, six.integer_types):
-            self._data = OrderedDict([(value.name, value) if i == key else (
+            self._data = omdict([(value.name, value) if i == key else (
                 k, v) for i, (k, v) in enumerate(six.iteritems(self._data))])
         else:
             if value.name != key:
@@ -126,7 +127,7 @@ class NamedObjectMap:
             self._data[value.name] = value
         elif hasattr(value, "__iter__"):
             for item in value:
-                self._data[item.name] = item
+                self._data.add(item.name, item)
         else:
             raise TypeError("can only add " + str(type) + " objects")
 

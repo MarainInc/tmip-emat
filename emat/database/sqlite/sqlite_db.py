@@ -147,7 +147,7 @@ class SQLiteDB(Database):
         self.conn.commit()
 
     @copydoc(Database.write_scope)
-    def write_scope(self, scope_name, sheet, scp_xl, scp_m, content=None):
+    def write_scope(self, scope_name, sheet, scp_xl, scp_m, content=None, display_name=None):
 
         cur = self.conn.cursor()
 

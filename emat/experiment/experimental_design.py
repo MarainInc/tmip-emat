@@ -14,7 +14,7 @@ _logger = get_module_logger(__name__)
 from .samplers import (
     LHSSampler,
     AbstractSampler,
-    UniformLHSSampler,
+    # UniformLHSSampler,
     MonteCarloSampler,
     CorrelatedLHSSampler,
     CorrelatedMonteCarloSampler,
@@ -23,7 +23,7 @@ from .samplers import (
 
 samplers = {
     'lhs': CorrelatedLHSSampler,
-    'ulhs': UniformLHSSampler,
+    # 'ulhs': UniformLHSSampler,
     'mc': CorrelatedMonteCarloSampler,
     'ulhs99': lambda: TrimmedUniformLHSSampler(0.01),
     'ulhs98': lambda: TrimmedUniformLHSSampler(0.02),

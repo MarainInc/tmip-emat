@@ -41,6 +41,7 @@ dependencies:
 - salib
 - sqlalchemy
 - statsmodels
+- orderedmultidict
 - tmip::emat
 
 # After setting up and activating this environment, register with jupyter-notebook::

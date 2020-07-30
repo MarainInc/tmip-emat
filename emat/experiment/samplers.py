@@ -1,20 +1,14 @@
-import os
 import numpy
-import pandas
-import warnings
 import operator
-from scipy import stats
-from typing import Mapping
+import warnings
 
-from ..workbench.em_framework.samplers import (
-    AbstractSampler,
-    LHSSampler,
-    UniformLHSSampler,
-    MonteCarloSampler,
-    DefaultDesigns,
-)
+import numpy as np
+import pandas
+from scipy import stats
 
 from ..exceptions import AsymmetricCorrelationError
+from ..workbench.em_framework.samplers import (AbstractSampler, DefaultDesigns, LHSSampler, MonteCarloSampler)
+
 
 def induce_correlation(std_uniform_sample, correlation_matrix, inplace=False):
     """
@@ -45,11 +39,13 @@ def induce_correlation(std_uniform_sample, correlation_matrix, inplace=False):
 
     try:
         chol = numpy.linalg.cholesky(correlation_matrix)
-    except numpy.linalg.LinAlgError as err:
-        raise numpy.linalg.LinAlgError("failed correlation_matrix is\n"+str(correlation_matrix)) from err
-
-    cor_normal_sample = chol.dot(std_normal_sample.T).T
-
+        cor_normal_sample = chol.dot(std_normal_sample.T).T
+    except numpy.linalg.LinAlgError:
+        d, Q = np.linalg.eigh(correlation_matrix)
+        d = np.maximum(d, 0.0)
+        D = np.diag(d)
+        L = Q @ (D**(1/2))
+        cor_normal_sample = L.dot(std_normal_sample.T).T
     if inplace:
         std_uniform_sample[:, :] = norm.cdf(cor_normal_sample)
     else:
@@ -77,7 +73,7 @@ class CorrelatedSampler(AbstractSampler):
 
         '''
         return pandas.DataFrame({
-            param.name:  numpy.array(self.sample_std_uniform(size)).reshape(size)
+            param.name: numpy.array(self.sample_std_uniform(size)).reshape(size)
             for param in parameters
         })
 
@@ -135,9 +131,8 @@ class CorrelatedSampler(AbstractSampler):
         if any_corr and validate:
             eigenval, eigenvec = numpy.linalg.eigh(correlation)
             if numpy.min(eigenval) <= 0:
-                raise numpy.linalg.LinAlgError("correlation matrix is not positive definite")
+                warnings.warn("correlation matrix possibly non-psd, using alternative method to induce correlation")
             elif numpy.min(eigenval) <= 0.001:
-                import warnings
                 warnings.warn("correlation matrix is nearly singular, expect numerical problems")
 
         if not any_corr and none_if_none:
@@ -210,7 +205,6 @@ class CorrelatedLHSSampler(CorrelatedSampler, LHSSampler):
         return smp
 
 
-
 class CorrelatedMonteCarloSampler(CorrelatedSampler, MonteCarloSampler):
     """
     Generator for correlated Monte Carlo samples for each of the parameters
@@ -256,11 +250,10 @@ class TrimmedUniformLHSSampler(LHSSampler):
         samples = {}
         for param in parameters:
             lower_bound = param.dist.ppf(self.trim_level)
-            upper_bound = param.dist.ppf(1.0-self.trim_level)
+            upper_bound = param.dist.ppf(1.0 - self.trim_level)
             if isinstance(param.dist.dist, stats.rv_continuous):
                 dist = stats.uniform(lower_bound, upper_bound - lower_bound)
             else:
                 dist = stats.randint(lower_bound, upper_bound + 1)
             samples[param.name] = self.sample(dist, size)
         return samples
-

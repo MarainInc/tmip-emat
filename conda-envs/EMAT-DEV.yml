@@ -41,6 +41,7 @@ dependencies:
 - altair
 - salib
 - sqlalchemy
+- orderedmultidict
 - webcolors
 
 - sphinx>=1.8.2,<2
