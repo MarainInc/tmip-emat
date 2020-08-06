@@ -213,9 +213,12 @@ def combine(*args):
     for entry in args[1::]:
         overlap = set(experiment.keys()).intersection(set(entry.keys()))
         if overlap:
-            raise EMAError(
-                'parameters exist in {} and {}, overlap is {}'.format(
-                    experiment, entry, overlap))
+            print('Warning: Please check the parameters overlap among experiment and entry')
+            print(overlap)
+            
+       #     raise EMAError(
+       #         'parameters exist in {} and {}, overlap is {}'.format(
+       #             experiment, entry, overlap))
         experiment.update(entry)
 
     return experiment
