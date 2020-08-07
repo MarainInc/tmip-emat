@@ -9,6 +9,8 @@ from collections.abc import MutableMapping  # @UnusedImport
 import itertools
 import six
 
+import logging
+
 from ..util import EMAError
 
 # from .parameters import Parameter
@@ -213,9 +215,9 @@ def combine(*args):
     for entry in args[1::]:
         overlap = set(experiment.keys()).intersection(set(entry.keys()))
         if overlap:
-            print('Warning: Please check the parameters overlap among experiment and entry')
-            print(overlap)
-            
+            logging.warning('parameters exist in {} and {}, overlap is {}'.format(
+                    experiment, entry, overlap))
+          
        #     raise EMAError(
        #         'parameters exist in {} and {}, overlap is {}'.format(
        #             experiment, entry, overlap))
