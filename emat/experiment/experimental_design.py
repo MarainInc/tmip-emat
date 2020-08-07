@@ -212,7 +212,7 @@ def design_experiments(
         for i in scope.get_constants():
             design[i.name] = i.default
 
-    design = scope.ensure_dtypes(design)
+    design = scope.ensure_dtypes(design).drop_duplicates(ignore_index=True)
 
     if db is not None and sample_from is 'all':
         experiment_ids = db.write_experiment_parameters(scope.name, design_name, design)
