@@ -7,7 +7,7 @@ import pandas
 from scipy import stats
 
 from ..exceptions import AsymmetricCorrelationError
-from ..workbench.em_framework.samplers import (AbstractSampler, DefaultDesigns, LHSSampler, MonteCarloSampler)
+from ..workbench.em_framework.samplers import (AbstractSampler, DefaultDesigns, LHSSampler, MonteCarloSampler, FullFactorialSampler)
 
 
 def induce_correlation(std_uniform_sample, correlation_matrix, inplace=False):
@@ -181,6 +181,14 @@ class CorrelatedSampler(AbstractSampler):
 
         return designs
 
+
+class CorrelatedFFSampler(CorrelatedSampler, FullFactorialSampler):
+    """Generates a full factorial sample for each of the parameters
+
+    Induces correlation among parameters as needed.
+    """
+    def sample_std_uniform(self, size):
+        pass
 
 class CorrelatedLHSSampler(CorrelatedSampler, LHSSampler):
     """
