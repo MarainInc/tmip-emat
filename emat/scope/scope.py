@@ -179,14 +179,15 @@ class Scope:
 
 
     def store_scope(self, db: Database):
-        ''' writes variables and scope definition to database 
+        '''
+        Write variables and scope definition to database.
         
-            Required prior to running experiment design
-            
-            Not necessary if scope has already been run
-            
-            Args:
-                db (Database): database object
+        Writing the scope to the database is required
+        prior to running a experiments that will be
+        stored.
+
+        Args:
+            db (Database): database object
         '''
                 
         # load experiment variables and performance measures        
@@ -703,7 +704,7 @@ class Scope:
             except:
                 return name
 
-    def tagged_shortname(self, name):
+    def tagged_shortname(self, name, wrap_width=None, line_sep="<br>"):
         """
         Get a label, for any named parameter or measure.
 
@@ -721,7 +722,11 @@ class Scope:
             M="Ⓜ ",
             C="Ⓒ ",
         )
-        return tags.get(self.get_ptype(name),"")+self.shortname(name)
+        result = tags.get(self.get_ptype(name),"")+self.shortname(name)
+        if wrap_width is not None:
+            import textwrap
+            result = line_sep.join(textwrap.wrap(result, width=wrap_width))
+        return result
 
     def get_description(self, name):
         """

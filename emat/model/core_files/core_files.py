@@ -104,13 +104,13 @@ class FilesCoreModel(AbstractCoreModel):
 		self.local_directory = local_directory or self.config.get("local_directory") or os.getcwd()
 		"""Path: The current local working directory for this model."""
 
-		self.model_path = self.config['model_path']
+		self.model_path = os.path.expanduser(self.config['model_path'])
 		"""Path: The directory of the 'live' model instance, relative to the local_directory."""
 
 		self.rel_output_path = self.config.get('rel_output_path', 'Outputs')
 		"""Path: The path to 'live' model outputs, relative to `model_path`."""
 
-		self.archive_path = self.config['model_archive']
+		self.archive_path = os.path.expanduser(self.config['model_archive'])
 		"""Path: The directory where archived models are stored."""
 
 		self.allow_short_circuit = self.config.get('allow_short_circuit', True)
@@ -295,19 +295,24 @@ class FilesCoreModel(AbstractCoreModel):
 			else:
 				_logger.error(f"run_core_model CONTINUE AFTER ERROR {experiment_id}")
 
-		_logger.debug(f"run_core_model post_process {experiment_id}")
-		self.post_process(xl, m_names)
+		try:
+			_logger.debug(f"run_core_model post_process {experiment_id}")
+			self.post_process(xl, m_names)
 
-		_logger.debug(f"run_core_model wrap up {experiment_id}")
-		measures_dictionary = self.load_measures(m_names)
-		m_df = pd.DataFrame(measures_dictionary, index=[experiment_id])
+			_logger.debug(f"run_core_model wrap up {experiment_id}")
+			measures_dictionary = self.load_measures(m_names)
+			m_df = pd.DataFrame(measures_dictionary, index=[experiment_id])
 
-		# Assign to outcomes_output instead of returning them, for ema_workbench compatibility
-		self.outcomes_output = measures_dictionary
-
-		_logger.debug(f"run_core_model write db {experiment_id}")
-		if hasattr(self, 'db') and self.db is not None:
-			self.db.write_experiment_measures(self.scope.name, self.metamodel_id, m_df)
+			# Assign to outcomes_output instead of returning them, for ema_workbench compatibility
+			self.outcomes_output = measures_dictionary
+		except:
+			_logger.exception(f"error in post_process, load_measures or outcome processing {experiment_id}")
+			_logger.error(f"proceeding directly to archive attempt {experiment_id}")
+		else:
+			# only write to database if there was no error in post_process, load_measures or outcome processing
+			_logger.debug(f"run_core_model write db {experiment_id}")
+			if hasattr(self, 'db') and self.db is not None:
+				self.db.write_experiment_measures(self.scope.name, self.metamodel_id, m_df)
 
 		try:
 			ex_archive_path = self.get_experiment_archive_path(experiment_id)
@@ -402,9 +407,8 @@ class FilesCoreModel(AbstractCoreModel):
 		"""
 		experiment_archive_path = self.get_experiment_archive_path(experiment_id)
 		experiment_archive_zip = experiment_archive_path.rstrip("/\\")+".zip"
-		print(os.path.exists(experiment_archive_zip))
-		print(experiment_archive_zip)
 		if os.path.exists(experiment_archive_zip):
+			_logger.info(f"zipped archive found, loading from {experiment_archive_zip}")
 			import tempfile, zipfile
 			with tempfile.TemporaryDirectory() as tmpdir:
 				zipfile.ZipFile(experiment_archive_zip).extractall(tmpdir)
@@ -416,10 +420,11 @@ class FilesCoreModel(AbstractCoreModel):
 					)
 				)
 		else:
+			_logger.info(f"loading from {experiment_archive_path}")
 			return self.load_measures(
 				measure_names,
 				abs_output_path=os.path.join(
-					self.get_experiment_archive_path(experiment_id),
+					experiment_archive_path,
 					self.rel_output_path,
 				)
 			)
