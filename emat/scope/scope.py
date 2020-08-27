@@ -320,6 +320,7 @@ class Scope:
         s['scope'] = dict()
         s['scope']['name'] = self.name
         s['scope']['desc'] = self.desc
+        s['scope']['display_name'] = self.display_name
         s['inputs'] = {}
         s['outputs'] = {}
 
