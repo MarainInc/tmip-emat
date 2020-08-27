@@ -319,7 +319,7 @@ class MetaModel:
             self.regression.set_params(random_state=random_state)
 
         if suppress_converge_warnings:
-            from sklearn.gaussian_process.gpr import ConvergenceWarning
+            from sklearn.exceptions import ConvergenceWarning
             import warnings
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=ConvergenceWarning)
