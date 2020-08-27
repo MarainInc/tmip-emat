@@ -323,13 +323,14 @@ class Scope:
         s['inputs'] = {}
         s['outputs'] = {}
 
-        const_keys = ['ptype','desc','dtype','default']
+        const_keys = ['ptype','desc','dtype','default','address']
         parameter_keys = OrderedDict([
             # ('shortname', lambda x: x or None), # processed separately
             ('ptype', lambda x: x),
             ('desc', lambda x: x),
             ('dtype', lambda x: x),
             ('default', lambda x: x),
+            ('address', lambda x:x),
             ('min', lambda x: x),
             ('max', lambda x: x),
             # ('dist', lambda x: _name_or_dict(x) or None), # processed separately
