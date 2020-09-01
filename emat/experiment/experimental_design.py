@@ -52,6 +52,12 @@ class ExperimentalDesign(pd.DataFrame):
     # normal properties
     _metadata = ['design_name', 'sampler_name', 'scope']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.design_name = None
+        self.sampler_name = None
+        self.scope = None
+
     @property
     def scope_name(self):
         if hasattr(self.scope, 'name'):
@@ -70,6 +76,38 @@ class ExperimentalDesign(pd.DataFrame):
     def _constructor_sliced(self):
         return ExperimentalDesignSeries
 
+    def prim(self, data='parameters', target=None, **kwargs):
+        """
+        Create a new Prim search for this experimental design.
+
+        Args:
+            data ({'parameters', 'levers', 'uncertainties', 'measures', 'all'}):
+                Limit the restricted dimensions to only be drawn
+                from this subset of possible dimensions from the scope.
+                Defaults to 'parameters` (i.e. levers and uncertainties).
+            target (str, optional):
+                If not given, the current active selection is used as the
+                target for Prim.  Otherwise, give the name of an existing
+                selection, or an expression to be evaluated on the visualizer
+                data to create a new target.
+            **kwargs:
+                All other keyword arguments are forwarded to the
+                `emat.analysis.Prim` constructor.
+
+        Returns:
+            emat.analysis.Prim
+        """
+        if self.scope is None:
+            raise ValueError("missing scope")
+        from ..analysis.explore_2.explore_visualizer import Visualizer
+        if isinstance(target, str):
+            target_name = target
+            target = self.eval(target)
+        else:
+            target_name = getattr(target, 'name', "PRIM Target")
+        viz = Visualizer(data=self, scope=self.scope)
+        viz.new_selection(target, name=target_name)
+        return viz.prim(data=data, target=target_name, **kwargs)
 
 def design_experiments(
         scope: Scope,
