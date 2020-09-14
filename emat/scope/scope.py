@@ -699,6 +699,9 @@ class Scope:
         try:
             x = self[name]
         except KeyError:
+            if 'll__' in name:
+                name = name.strip("ll__")
+            name = " ".join(name.split("_"))
             return name
         else:
             try:

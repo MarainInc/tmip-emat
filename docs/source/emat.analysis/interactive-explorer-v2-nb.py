@@ -15,6 +15,7 @@
 
 # %%
 import emat
+import pandas as pd
 emat.versions()
 
 # %% [markdown]
@@ -30,9 +31,8 @@ emat.versions()
 
 # %%
 import emat.examples
-scope, db, model = emat.examples.road_test()
-design = model.design_experiments(n_samples=5000)
-results = model.run_experiments(design)
+scope = emat.Scope("notebooks/scope.yaml")
+results = pd.read_csv("notebooks/results.csv")
 
 # %% [markdown]
 # One feature of the visualizer is the ability to display not only a number of results,
@@ -45,7 +45,6 @@ results = model.run_experiments(design)
 # visualizations.
 
 # %%
-refpoint = model.run_reference_experiment()
 
 # %% [markdown]
 # The interactive visualizer class can be imported from the `emat.analysis` package.
@@ -56,7 +55,7 @@ refpoint = model.run_reference_experiment()
 from emat.analysis import Visualizer
 
 # %%
-viz = Visualizer(scope=scope, data=results, reference_point=refpoint)
+viz = Visualizer(scope=scope, data=results)
 
 # %% [markdown]
 # ## Single Dimension Figures

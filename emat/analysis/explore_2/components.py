@@ -282,6 +282,7 @@ def new_frequencies_figure(
 			),
 		],
 		layout=dict(
+			xaxis=dict(type='category'),
 			barmode='stack',
 			showlegend=False,
 			margin=styles.figure_margins,
@@ -345,6 +346,7 @@ def update_frequencies_figure(
 	existing_lines = fig_existing_lines(fig) if ref_point is None else []
 	col = getattr(data_column, 'name', None)
 	add_boxes_to_figure(box, col, fig, ref_point=ref_point, existing_shapes=existing_lines)
+	fig['layout']['xaxis']['type']='category'
 	return fig
 
 
@@ -377,6 +379,7 @@ def add_boxes_to_figure(box, col, fig, ref_point=None, existing_shapes=None):
 				fig['data'][0]['x'][-1] + (fig['data'][0]['width'][-1] / 2),
 			)
 		except (TypeError, KeyError):
+			print('ok')
 			x_range = (
 				-0.5,
 				len(fig['data'][0]['x']) + 0.5
