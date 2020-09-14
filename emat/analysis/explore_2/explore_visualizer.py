@@ -1220,6 +1220,8 @@ class Visualizer(DataFrameExplorer):
 	def selection_feature_scores(self):
 		try:
 			scores = self._compute_selection_feature_scores().data.iloc[0]
+		except KeyboardInterrupt:
+			raise
 		except:
 			scores = {}
 		y = self.scope.get_parameter_names(False)
@@ -1257,6 +1259,8 @@ class Visualizer(DataFrameExplorer):
 		fig = self._selection_feature_score_fig
 		try:
 			scores = self._compute_selection_feature_scores().data.iloc[0]
+		except KeyboardInterrupt:
+			raise
 		except:
 			scores = {}
 		y = self.scope.get_parameter_names(False)

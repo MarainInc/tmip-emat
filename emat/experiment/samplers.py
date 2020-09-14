@@ -131,7 +131,7 @@ class CorrelatedSampler(AbstractSampler):
         if any_corr and validate:
             eigenval, eigenvec = numpy.linalg.eigh(correlation)
             if numpy.min(eigenval) <= 0:
-                warnings.warn("correlation matrix possibly non-psd, using alternative method to induce correlation")
+                raise numpy.linalg.LinAlgError("correlation matrix is not positive definite")
             elif numpy.min(eigenval) <= 0.001:
                 warnings.warn("correlation matrix is nearly singular, expect numerical problems")
 
