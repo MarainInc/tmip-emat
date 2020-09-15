@@ -242,7 +242,6 @@ class Visualizer(DataFrameExplorer):
 					box=box,
 					ref_point=self.reference_point(col),
 				)
-				fig.layout['xaxis']['type'] = 'category'
 
 	def _compute_histogram(self, col, selection, bins=None):
 		if col not in self._base_histogram:
