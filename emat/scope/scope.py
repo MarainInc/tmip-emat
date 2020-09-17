@@ -11,7 +11,7 @@ from typing import Mapping
 from scipy.stats._distn_infrastructure import rv_frozen
 
 from ..database.database import Database
-from .parameter import Parameter, standardize_parameter_type, make_parameter
+from .parameter import Parameter, standardize_parameter_type, make_parameter, CategoricalParameter
 from .measure import Measure
 from ..util.docstrings import copydoc
 from ..util import rv_frozen_as_dict
@@ -363,7 +363,10 @@ class Scope:
                 s['inputs'][i.name]['shortname'] = i.shortname_if_any
             for k in parameter_keys:
                 if hasattr(i, k):
-                    v = parameter_keys[k](getattr(i,k))
+                    if isinstance(i, CategoricalParameter) and k == 'values':
+                        v = i.categories._data.allkeys()
+                    else:
+                        v = parameter_keys[k](getattr(i, k))
                     if v is not None:
                         s['inputs'][i.name][k] = v
             v = i.distdef

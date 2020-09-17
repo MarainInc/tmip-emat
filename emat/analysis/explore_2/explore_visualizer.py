@@ -307,7 +307,6 @@ class Visualizer(DataFrameExplorer):
 		select_max = int(numpy.ceil(select_max))
 
 		fig = self.get_figure(name)
-
 		toggles = fig.layout['meta']['x_tick_values'][select_min:select_max]
 		fig.for_each_trace(_deselect_all_points)
 
