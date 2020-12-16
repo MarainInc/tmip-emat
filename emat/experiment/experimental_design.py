@@ -15,7 +15,7 @@ _logger = get_module_logger(__name__)
 from .samplers import (
     LHSSampler,
     AbstractSampler,
-    UniformLHSSampler,
+    # UniformLHSSampler,
     MonteCarloSampler,
     CorrelatedLHSSampler,
     CorrelatedMonteCarloSampler,
@@ -24,7 +24,7 @@ from .samplers import (
 
 samplers = {
     'lhs': CorrelatedLHSSampler,
-    'ulhs': UniformLHSSampler,
+    # 'ulhs': UniformLHSSampler,
     'mc': CorrelatedMonteCarloSampler,
     'ulhs99': lambda: TrimmedUniformLHSSampler(0.01),
     'ulhs98': lambda: TrimmedUniformLHSSampler(0.02),
@@ -209,15 +209,25 @@ def design_experiments(
 
     if not isinstance(sampler, AbstractSampler):
         if sampler not in samplers:
-            raise ValueError(f"unknown sampler {sampler}")
+            if sampler == 'ff':
+                sample_generator = samplers['lhs']()
+            else:
+                raise ValueError(f"unknown sampler {sampler}")
         else:
             sample_generator = samplers[sampler]()
     else:
         sample_generator = sampler
 
     np.random.seed(random_seed)
-
-    if sample_from == 'all' and not jointly:
+    if sampler == 'ff':
+        parms = []
+        parms += [i for i in scope.get_uncertainties()]
+        parms += [i for i in scope.get_levers()]
+        n_samples = len(parms)*1000
+        samples = sample_generator.generate_designs(parms, n_samples)
+        samples.kind = dict
+        design = pd.DataFrame.from_records([_ for _ in samples])
+    elif sample_from == 'all' and not jointly:
 
         if n_samples is None:
             n_samples_u = n_samples_per_factor * len(scope.get_uncertainties())
@@ -257,8 +267,7 @@ def design_experiments(
         for i in scope.get_constants():
             design[i.name] = i.default
 
-    design = scope.ensure_dtypes(design)
-    design = design.drop_duplicates()
+    design = scope.ensure_dtypes(design).drop_duplicates(ignore_index=True)
 
     if db is not None and sample_from is 'all':
         try:

@@ -11,7 +11,7 @@ from typing import Mapping
 from scipy.stats._distn_infrastructure import rv_frozen
 
 from ..database.database import Database
-from .parameter import Parameter, standardize_parameter_type, make_parameter
+from .parameter import Parameter, standardize_parameter_type, make_parameter, CategoricalParameter
 from .measure import Measure
 from ..util.docstrings import copydoc
 from ..util import rv_frozen_as_dict
@@ -97,6 +97,7 @@ class Scope:
 
         self.name = str(scope['scope']['name'])
         self.desc = scope['scope'].get('desc', '')
+        self.display_name = scope['scope'].get('display_name', '')
         self.xl_di = scope['inputs']
         self.m_di = scope['outputs']
 
@@ -199,22 +200,19 @@ class Scope:
         Args:
             db (Database): database object
         '''
-
-        # write experiment variables and performance measures
-        db.init_xlm(
-            [(xl, self.xl_di[xl]['ptype']) for xl in self.xl_di],
-            [(m.name, m.transform) for m in self._m_list],
-        )
-
-        # write scope definitions
-        db.write_scope(
-            self.name,
-            self.scope_file,
-            [xl for xl in self.xl_di],
-            [m.name for m in self._m_list],
-            content=self,
-        )
-
+                
+        # load experiment variables and performance measures        
+        db.init_xlm([(xl, self.xl_di[xl]['ptype']) for xl in self.xl_di],
+                    [(m.name, m.transform) for m in self._m_list])
+        
+        # load scope definitions
+        db.write_scope(self.name,
+                      self.scope_file,
+                      [xl for xl in self.xl_di],
+                      [m.name for m in self._m_list],
+                       content=self,
+                       display_name=self.display_name)
+        
     def delete_scope(self, db: Database):
         '''Deletes scope from database.
 
@@ -335,16 +333,18 @@ class Scope:
         s['scope'] = dict()
         s['scope']['name'] = self.name
         s['scope']['desc'] = self.desc
+        s['scope']['display_name'] = self.display_name
         s['inputs'] = {}
         s['outputs'] = {}
 
-        const_keys = ['ptype','desc','dtype','default']
+        const_keys = ['ptype','desc','dtype','default','address']
         parameter_keys = OrderedDict([
             # ('shortname', lambda x: x or None), # processed separately
             ('ptype', lambda x: x),
             ('desc', lambda x: x),
             ('dtype', lambda x: x),
             ('default', lambda x: x),
+            ('address', lambda x:x),
             ('min', lambda x: x),
             ('max', lambda x: x),
             # ('dist', lambda x: _name_or_dict(x) or None), # processed separately
@@ -380,7 +380,10 @@ class Scope:
                 s['inputs'][i.name]['shortname'] = i.shortname_if_any
             for k in parameter_keys:
                 if hasattr(i, k):
-                    v = parameter_keys[k](getattr(i,k))
+                    if isinstance(i, CategoricalParameter) and k == 'values':
+                        v = i.categories._data.allkeys()
+                    else:
+                        v = parameter_keys[k](getattr(i, k))
                     if v is not None:
                         s['inputs'][i.name][k] = v
             v = i.distdef
@@ -868,6 +871,9 @@ class Scope:
         try:
             x = self[name]
         except KeyError:
+            if 'll__' in name:
+                name = name.strip("ll__")
+            name = " ".join(name.split("_"))
             return name
         else:
             try:

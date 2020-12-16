@@ -41,6 +41,7 @@ dependencies:
 - salib
 - sqlalchemy
 - statsmodels
+- orderedmultidict
 - tmip::emat
 - packaging
 

@@ -13,8 +13,11 @@
 #     name: python3
 # ---
 
+import pandas as pd
+
 # %%
 import emat
+
 emat.versions()
 
 # %% [markdown]
@@ -30,9 +33,9 @@ emat.versions()
 
 # %%
 import emat.examples
-scope, db, model = emat.examples.road_test()
-design = model.design_experiments(n_samples=5000)
-results = model.run_experiments(design)
+
+scope = emat.Scope("notebooks/scope.yaml")
+results = pd.read_csv("notebooks/results.csv")
 
 # %% [markdown]
 # One feature of the visualizer is the ability to display not only a number of results,
@@ -45,7 +48,6 @@ results = model.run_experiments(design)
 # visualizations.
 
 # %%
-refpoint = model.run_reference_experiment()
 
 # %% [markdown]
 # The interactive visualizer class can be imported from the `emat.analysis` package.
@@ -56,7 +58,6 @@ refpoint = model.run_reference_experiment()
 from emat.analysis import Visualizer
 
 # %%
-viz = Visualizer(scope=scope, data=results, reference_point=refpoint)
 
 # %% [markdown]
 # ## Single Dimension Figures
@@ -86,14 +87,65 @@ viz = Visualizer(scope=scope, data=results, reference_point=refpoint)
 # ![Selecting from histograms](interactive-gifs/select-from-histograms-.gif)
 
 # %%
-viz.complete()
-
+ll_levers = [l for l in scope.get_lever_names() if l.startswith('ll')]
+results[scope.get_lever_names()] = results[scope.get_lever_names()].astype('str')
+results['ll__ev_battery_size'] = results['ll__ev_battery_size'].apply(lambda x: x + " kWh")
+results['ll__ev_mileage'] = results['ll__ev_mileage'].apply(lambda x: x + " mi/kWh")
+results['ll__sdv_fleet_shift_duration'] = results['ll__sdv_fleet_shift_duration'].apply(lambda x: x + " hours")
+results['ll__sd_fleet_size'] = results['ll__sd_fleet_size'].apply(lambda x: x + " veh")
+results[scope.get_lever_names()] = results[scope.get_lever_names()].astype('category')
+results[scope.get_uncertainty_names()] = results[scope.get_uncertainty_names()].astype('category')
+results[scope.get_measure_names()] = results[scope.get_measure_names()].astype(float)
+ll_levers.extend(['ll__demand',
+                  'average_initial_electricity_stored_per_vehicle_in_j',
+                  'initial_fleet_soc',
+                  'final_electricity_stored_in_j',
+                  'average_final_electricity_stored_per_vehicle_in_j', 'vtdr__1',
+                  'effective_vtdr__1',
+                  'on_trip_distance_occupancy__1',
+                  'fleet_distance_occupancy__1',
+                  'total_supply_time_in_s__1',
+                  'total_time_spent_queueing_in_s__1',
+                  'total_vehicle_active_time_in_s__1',
+                  'total_vehicle_transportation_time_in_s__1',
+                  'total_passenger_transportation_time_in_paxs__1',
+                  'total_effective_transportation_time_in_paxs__1',
+                  'vttr__1',
+                  'effective_vttr__1',
+                  'utilization__1',
+                  'on_trip_time_occupancy__1',
+                  'fleet_time_occupancy__1',
+                  'total_vehicle_movement_distance_in_m__2__1',
+                  'total_vehicle_transportation_distance_in_m__2',
+                  'total_passenger_transportation_distance_in_paxm__2',
+                  'total_effective_transportation_distance_in_paxm__2',
+                  'vtdr__2',
+                  'effective_vtdr__2',
+                  'on_trip_distance_occupancy__2',
+                  'fleet_distance_occupancy__2',
+                  'total_supply_time_in_s__2',
+                  'total_time_spent_queueing_in_s__2',
+                  'total_vehicle_active_time_in_s__2',
+                  'total_vehicle_transportation_time_in_s__2',
+                  'total_passenger_transportation_time_in_paxs__2',
+                  'total_effective_transportation_time_in_paxs__2',
+                  'vttr__2',
+                  'effective_vttr__2',
+                  'utilization__2',
+                  'on_trip_time_occupancy__2',
+                  'fleet_time_occupancy__2'])
+viz = Visualizer(scope=scope, data=results)
+viz.status()
+viz.selectors(ll_levers)
+viz.new_box('High Utilization', lower_bounds={'utilization__1': 0.7},
+            allowed={'ll__ev_battery_size': {'150 kWh', '100 kWh'}})
+print(viz.status())
 # %% [markdown]
 # It is also possible to display just a small subset of the figures of this interactive viewer.
 # This could be convenient, for example, if there are a very large number of performance measures.
 
 # %%
-viz.selectors(['input_flow', 'expand_capacity', 'net_benefits'])
+# viz.selectors(['input_flow', 'expand_capacity', 'net_benefits'])
 
 # %% [raw] raw_mimetype="text/restructuredtext"
 # In addition to manipulating the controls interactively, they can also be
@@ -103,19 +155,15 @@ viz.selectors(['input_flow', 'expand_capacity', 'net_benefits'])
 # and then add that new box to this visualizer using the :meth:`Visualizer.add_box` command.
 
 # %%
-box = emat.Box("Passable", scope=scope)
-box.set_upper_bound('cost_of_capacity_expansion', 400)
-box.set_lower_bound('time_savings', 5)
-box.remove_from_allowed_set('debt_type', 'GO Bond')
-viz.add_box(box)
 
+viz.two_way(x='ll__demand', y='utilization__1')
 # %% [markdown]
 # Alternatively, a new box can be created and added to the Visualier
 # with a single :meth:`Visualizer.new_box` command, which
 # passes most keyword arguments through to the :class:`emat.Box` constuctor.
 
 # %%
-viz.new_box('Profitable', lower_bounds={'net_benefits':0});
+viz.new_box('Profitable', lower_bounds={'net_benefits': 0});
 
 # %% [markdown]
 # Each of these new boxes is added to the `Visualizer` seperately. You can
@@ -189,14 +237,14 @@ viz.two_way(x='expand_capacity', y='time_savings')
 
 # %%
 viz.splom(
-    rows=('expand_capacity','time_savings','net_benefits'), 
+    rows=('expand_capacity', 'time_savings', 'net_benefits'),
     cols='L',
     reset=True
 )
 
 # %%
 viz.hmm(
-    rows=('time_savings','net_benefits'), 
+    rows=('time_savings', 'net_benefits'),
     cols='L',
     show_points=100,
     reset=True,

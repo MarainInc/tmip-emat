@@ -43,18 +43,18 @@ class Color:
 			return f"rgba({self.r},{self.g},{self.b},{self.a})"
 		return f"rgba({self.r},{self.g},{self.b},1.0)"
 
+DEFAULT_BASE_COLOR_RGB = (153, 153, 153)         # Medium Grey
+DEFAULT_HIGHLIGHT_COLOR_RGB = (254, 193, 53)    # Yellow
 
-DEFAULT_BASE_COLOR_RGB = Color(31, 119, 180)         # Blue
-DEFAULT_HIGHLIGHT_COLOR_RGB = Color(255, 127, 14)    # Orange
+DEFAULT_BASE_COLOR = 'rgb(153, 153, 153)'      # Medium Grey
+DEFAULT_HIGHLIGHT_COLOR = 'rgb(254, 193, 53)' # Yellow
+DEFAULT_LASSO_COLOR = 'rgb(57, 169, 219)'     # Blue
+DEFAULT_PRIMTARGET_COLOR = 'rgb(82, 72, 123)' # Purple
+DEFAULT_EXPRESSION_COLOR = 'rgb(82, 72, 123)' # Purple
+DEFAULT_BOX_BG_COLOR = '#4E945D'   # Green
+DEFAULT_BOX_LINE_COLOR = '#4E945D'  # Green
 
-DEFAULT_BASE_COLOR = 'rgb(31, 119, 180)'      # Blue
-DEFAULT_HIGHLIGHT_COLOR = 'rgb(255, 127, 14)' # Orange
-DEFAULT_LASSO_COLOR = 'rgb(255, 46, 241)'     # Hot Pink
-DEFAULT_PRIMTARGET_COLOR = 'rgb(227, 20, 20)' # Red
-DEFAULT_EXPRESSION_COLOR = 'rgb(227, 20, 20)' # Red
-DEFAULT_BOX_BG_COLOR = '#2ca02c'    # Green
 DEFAULT_BOX_BG_BORDER_COLOR = '#217821'  # Green, 25% darker
-DEFAULT_BOX_LINE_COLOR = '#2ca02c'  # Green
 DEFAULT_REF_LINE_COLOR = '#000000'  # Black
 
 DEFAULT_REF_LINE_STYLE = dict(

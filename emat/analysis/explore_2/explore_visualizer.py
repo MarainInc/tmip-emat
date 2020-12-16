@@ -158,7 +158,7 @@ class Visualizer(DataFrameExplorer):
 			this_type = self.scope.get_dtype(col)
 		except:
 			this_type = 'float'
-		if this_type in ('cat','bool'):
+		if this_type in ('cat', 'bool'):
 			return self.get_frequency_figure(col)
 		if this_type in ('int',):
 			param = self.scope[col]
@@ -199,7 +199,7 @@ class Visualizer(DataFrameExplorer):
 				on_deselect=lambda *a: self._on_deselect_from_histogram(*a,name=col),
 				on_select=lambda *a: self._on_select_from_histogram(*a,name=col),
 				box=box,
-				title_text=self.scope.shortname(col),
+				title_text=" ".join(self.scope.shortname(col).split("_")).title(),
 				ref_point=self.reference_point(col),
 				selected_color=self.active_selection_color(),
 			)
@@ -367,7 +367,6 @@ class Visualizer(DataFrameExplorer):
 		select_max = int(numpy.ceil(select_max))
 
 		fig = self.get_figure(name).children[0]
-
 		toggles = fig.layout['meta']['x_tick_values'][select_min:select_max]
 		fig.for_each_trace(_deselect_all_points)
 
