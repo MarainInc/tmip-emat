@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS ema_experiment (
 
 CREATE TABLE IF NOT EXISTS ema_experiment_run (
     run_rowid        INTEGER PRIMARY KEY,
-    run_id           UUID NOT NULL UNIQUE,
+    run_id           uuid not null unique,
     experiment_id    INT NOT NULL,
     run_source       INT NOT NULL DEFAULT 0, -- 0 for core model, or a metamodel_id
     run_status       TEXT,
