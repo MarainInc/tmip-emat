@@ -16,7 +16,6 @@ def reindex_duplicates(df, subset=None):
 	Returns:
 		pandas.DataFrame
 	"""
-	from pandas._libs.hashtable import _SIZE_HINT_LIMIT
 
 	from pandas.core.sorting import get_group_index
 
@@ -24,9 +23,7 @@ def reindex_duplicates(df, subset=None):
 		return df._constructor_sliced(dtype=bool)
 
 	def f(vals):
-		labels, shape = _algorithms.factorize(
-			vals, size_hint=min(len(df), _SIZE_HINT_LIMIT)
-		)
+		labels, shape = _algorithms.factorize(vals)
 		return labels.astype("i8", copy=False), len(shape)
 
 	if subset is None:
