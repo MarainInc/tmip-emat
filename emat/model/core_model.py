@@ -8,6 +8,7 @@ import numpy as np
 import logging
 import subprocess
 import warnings
+from contextlib import contextmanager
 from typing import Union, Mapping
 from ..workbench.em_framework.model import AbstractModel as AbstractWorkbenchModel
 from ..workbench.em_framework.evaluators import BaseEvaluator
@@ -20,7 +21,7 @@ from ..scope.scope import Scope
 from ..optimization.optimization_result import OptimizationResult
 from ..optimization import EpsilonProgress, ConvergenceMetrics, SolutionCount
 from ..util.evaluators import prepare_evaluator
-from ..exceptions import MissingArchivePathError, ReadOnlyDatabaseError
+from ..exceptions import MissingArchivePathError, ReadOnlyDatabaseError, MissingIdWarning
 
 from .._pkg_constants import *
 
@@ -356,6 +357,10 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
         """Path: The current local working directory for this model."""
         return self.config.get("local_directory", os.getcwd())
 
+    @local_directory.setter
+    def local_directory(self, value):
+        self.config["local_directory"] = value
+
     @property
     def resolved_model_path(self):
         """
@@ -367,6 +372,20 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
         rely on the file system.
         """
         return self.local_directory
+
+    @property
+    def is_db_locked(self):
+        if self.db:
+            return self.db.is_locked
+        return False
+
+    @contextmanager
+    def lock_db(self, x=True):
+        if x and self.db:
+            with self.db.lock:
+                yield
+        else:
+            yield
 
     def enter_run_model(self):
         """A hook for actions at the very beginning of the run_model step."""
@@ -446,7 +465,10 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 assert isinstance(self.db, Database)
 
                 if experiment_id is None:
-                    experiment_id = self.db.read_experiment_id(self.scope.name, scenario, policy)
+                    with warnings.catch_warnings():
+                        if self.is_db_locked:
+                            warnings.simplefilter("ignore", category=MissingIdWarning)
+                        experiment_id = self.db.read_experiment_id(self.scope.name, scenario, policy)
 
                 if experiment_id and self.allow_short_circuit:
                     # opportunity to short-circuit run by loading pre-computed values.
@@ -460,7 +482,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                         self.log(f"short circuit experiment_id {experiment_id} / {getattr(self, 'uid', 'no uid')}")
                         return
 
-                if experiment_id is None and not self.db.readonly:
+                if experiment_id is None and not self.is_db_locked:
                     experiment_id = self.db.write_experiment_parameters_1(
                         self.scope.name, 'ad hoc', scenario, policy
                     )
@@ -837,15 +859,15 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             db (Database, required): The database to use for loading and saving experiments.
                 If none is given, the default database for this model is used.
                 If there is no default db, and none is given here,
-                these experiments will be aborted, as there won't be any way
-                to access the results.
+                these experiments will be aborted.
             design_name (str, optional): The name of a design of experiments to
                 load from the database.  This design is only used if
                 `design` is None.
             evaluator (emat.workbench.Evaluator, optional): Optionally give an
                 evaluator instance.  If not given, a default DistributedEvaluator
                 will be instantiated.  Passing any other kind of evaluator will
-                cause an error.
+                currently cause an error, although in the future other async
+                compatible evaluators may be provided.
             max_n_workers (int, optional):
                 The maximum number of workers that will be created for a default
                 dask.distributed LocalCluster.  If the number of cores available is
@@ -915,6 +937,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             *,
             design_name=None,
             db=None,
+            allow_short_circuit=None,
     ):
         """
         Runs a design of combined experiments using this model.
@@ -1011,13 +1034,22 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             # instead depend on the model execution process to write the results into
             # the database when complete.
             with evaluator:
-                perform_experiments(
-                    self,
-                    scenarios=scenarios,
-                    policies=policies,
-                    zip_over={'scenarios', 'policies'},
-                    evaluator=evaluator,
-                )
+                if allow_short_circuit is not None:
+                    _stored_allow_short_circuit = self.allow_short_circuit
+                    self.allow_short_circuit = allow_short_circuit
+                else:
+                    _stored_allow_short_circuit = None
+                try:
+                    perform_experiments(
+                        self,
+                        scenarios=scenarios,
+                        policies=policies,
+                        zip_over={'scenarios', 'policies'},
+                        evaluator=evaluator,
+                    )
+                finally:
+                    if _stored_allow_short_circuit is not None:
+                        self.allow_short_circuit = _stored_allow_short_circuit
             return
 
         else:
@@ -1027,6 +1059,11 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                     self.db = None
                 else:
                     _stored_db = None
+                if allow_short_circuit is not None:
+                    _stored_allow_short_circuit = self.allow_short_circuit
+                    self.allow_short_circuit = allow_short_circuit
+                else:
+                    _stored_allow_short_circuit = None
                 try:
                     experiments, outcomes = perform_experiments(
                         self,
@@ -1038,6 +1075,8 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 finally:
                     if _stored_db:
                         self.db = _stored_db
+                    if _stored_allow_short_circuit is not None:
+                        self.allow_short_circuit = _stored_allow_short_circuit
             experiments.index = design.index
 
             outcomes = pd.DataFrame.from_dict(outcomes)
@@ -1796,6 +1835,7 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
             policies,
             evaluator=None,
             cache_dir=None,
+            suspend_db=True,
     ):
         """
         Perform robust evaluation(s).
@@ -1825,6 +1865,11 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 be created.
             cache_dir (path-like, optional): A directory in which to
                 cache results.
+            suspend_db (bool, default True):
+                Suspend writing the results of individual model runs to
+                the database.  Robust evaluation potentially generates a
+                large number of model executions, and storing all these
+                individual results may not be useful.
 
         Returns:
             pandas.DataFrame: The computed value of each item
@@ -1855,30 +1900,31 @@ class AbstractCoreModel(abc.ABC, AbstractWorkbenchModel):
                 traceback.print_exc()
 
         if robust_results is None:
-            if evaluator is None:
-                from ..workbench.em_framework import SequentialEvaluator
-                evaluator = SequentialEvaluator(self)
+            with self.lock_db(suspend_db):
+                if evaluator is None:
+                    from ..workbench.em_framework import SequentialEvaluator
+                    evaluator = SequentialEvaluator(self)
 
-            if not isinstance(evaluator, BaseEvaluator):
-                from dask.distributed import Client
-                if isinstance(evaluator, Client):
-                    from ..workbench.em_framework.ema_distributed import DistributedEvaluator
-                    evaluator = DistributedEvaluator(self, client=evaluator)
+                if not isinstance(evaluator, BaseEvaluator):
+                    from dask.distributed import Client
+                    if isinstance(evaluator, Client):
+                        from ..workbench.em_framework.ema_distributed import DistributedEvaluator
+                        evaluator = DistributedEvaluator(self, client=evaluator)
 
-            from ..workbench.em_framework.samplers import sample_uncertainties, sample_levers
+                from ..workbench.em_framework.samplers import sample_uncertainties, sample_levers
 
-            if isinstance(scenarios, int):
-                n_scenarios = scenarios
-                scenarios = sample_uncertainties(self, n_scenarios)
+                if isinstance(scenarios, int):
+                    n_scenarios = scenarios
+                    scenarios = sample_uncertainties(self, n_scenarios)
 
-            with evaluator:
-                robust_results = evaluator.robust_evaluate(
-                    robustness_functions,
-                    scenarios,
-                    policies,
-                )
+                with evaluator:
+                    robust_results = evaluator.robust_evaluate(
+                        robustness_functions,
+                        scenarios,
+                        policies,
+                    )
 
-            robust_results = self.ensure_dtypes(robust_results)
+                robust_results = self.ensure_dtypes(robust_results)
 
         if cache_file is not None:
             from ..util.filez import save

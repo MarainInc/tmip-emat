@@ -10,6 +10,7 @@ Abstract Base Class for data storage format
 
 import abc
 import pandas as pd
+from contextlib import contextmanager
 
 class Database(abc.ABC):
     
@@ -21,6 +22,19 @@ class Database(abc.ABC):
 
     def __init__(self, readonly=False):
         self.readonly = readonly
+        self.__locked = False
+
+    @property
+    @contextmanager
+    def lock(self):
+        """Context manager to temporarily mark this database as locked."""
+        self.__locked = True
+        yield
+        self.__locked = False
+
+    @property
+    def is_locked(self):
+        return self.readonly or self.__locked
 
     def get_db_info(self):
         """
@@ -337,6 +351,8 @@ class Database(abc.ABC):
             only_complete=False,
             only_with_measures=False,
             ensure_dtypes=True,
+            with_run_ids=False,
+            runs=None,
     ):
         """
         Read experiment definitions and results
@@ -378,6 +394,19 @@ class Database(abc.ABC):
                 of the database, and that scope file is used to
                 format experimental data consistently (i.e., as
                 float, integer, bool, or categorical).
+            with_run_ids (bool, default False): Whether to use a
+                two-level pd.MultiIndex that includes both the
+                experiment_id (which always appears in the index)
+                as well as the run_id (which only appears in the
+                index if this argument is set to True).
+            runs ({None, 'all', 'valid', 'invalid'}, default None):
+                By default, this method returns the one and only
+                valid model run matching the given `design_name`
+                and `source` (if any) for any experiment, and fails
+                if there is more than one such valid run. Set this to
+                'valid' or 'invalid' to get all valid or invalid model
+                runs (instead of raising an exception). Set to 'all' to get
+                everything, including both valid and invalidated results.
 
         Returns:
             emat.ExperimentalDesign:
