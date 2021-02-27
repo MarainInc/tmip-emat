@@ -200,19 +200,19 @@ class Scope:
         Args:
             db (Database): database object
         '''
-                
-        # load experiment variables and performance measures        
+
+        # load experiment variables and performance measures
         db.init_xlm([(xl, self.xl_di[xl]['ptype']) for xl in self.xl_di],
                     [(m.name, m.transform) for m in self._m_list])
-        
+
         # load scope definitions
-        db.write_scope(self.name,
+        db._write_scope(self.name,
                       self.scope_file,
                       [xl for xl in self.xl_di],
                       [m.name for m in self._m_list],
                        content=self,
                        display_name=self.display_name)
-        
+
     def delete_scope(self, db: Database):
         '''Deletes scope from database.
 
