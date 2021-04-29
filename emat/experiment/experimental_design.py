@@ -223,7 +223,7 @@ def design_experiments(
         parms = []
         parms += [i for i in scope.get_uncertainties()]
         parms += [i for i in scope.get_levers()]
-        n_samples = len(parms)*1000
+        n_samples = len(parms)*10000
         samples = sample_generator.generate_designs(parms, n_samples)
         samples.kind = dict
         design = pd.DataFrame.from_records([_ for _ in samples])
